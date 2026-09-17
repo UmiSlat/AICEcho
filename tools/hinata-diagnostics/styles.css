@@ -1,0 +1,642 @@
+:root {
+  color: #202326;
+  background: #f4f6f5;
+  font-family:
+    "Segoe UI",
+    "Microsoft YaHei UI",
+    sans-serif;
+  font-synthesis: none;
+  letter-spacing: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  background: #f4f6f5;
+}
+
+button,
+input {
+  font: inherit;
+  letter-spacing: 0;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgba(0, 112, 105, 0.24);
+  outline-offset: 2px;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 104px;
+  padding: 22px clamp(20px, 4vw, 56px);
+  color: #f8fbfa;
+  background: #222a2c;
+  border-bottom: 4px solid #00a49a;
+}
+
+.app-header h1,
+.section-heading h2,
+.verdict-band h2,
+.probe-card h3 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.app-header h1 {
+  margin-top: 4px;
+  font-size: clamp(25px, 3vw, 34px);
+  font-weight: 680;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #647076;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.app-header .eyebrow {
+  color: #a9b8b7;
+}
+
+.header-actions,
+.custom-probe,
+.section-heading {
+  display: flex;
+  align-items: center;
+}
+
+.header-actions {
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.button.primary {
+  color: #ffffff;
+  background: #007f77;
+  border-color: #007f77;
+}
+
+.button.primary:hover:not(:disabled) {
+  background: #006b65;
+  border-color: #006b65;
+}
+
+.button.secondary {
+  color: #303638;
+  background: #ffffff;
+  border-color: #b7c0c0;
+}
+
+.app-header .button.secondary {
+  color: #f2f7f6;
+  background: transparent;
+  border-color: #687577;
+}
+
+.button.quiet {
+  color: #4c575a;
+  background: transparent;
+  border-color: #cbd2d1;
+}
+
+main {
+  width: min(1440px, 100%);
+  margin: 0 auto;
+  padding: 0 clamp(16px, 4vw, 56px) 48px;
+}
+
+.status-band {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(150px, 0.7fr) minmax(240px, 2fr);
+  border-bottom: 1px solid #d8dddc;
+  background: #ffffff;
+}
+
+.status-item {
+  min-width: 0;
+  padding: 18px 20px;
+  border-right: 1px solid #e2e6e5;
+}
+
+.status-item:last-child {
+  border-right: 0;
+}
+
+.status-label {
+  display: block;
+  margin-bottom: 5px;
+  color: #6d777a;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.status-value {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+
+[data-state="connected"] {
+  color: #00736c;
+}
+
+[data-state="error"] {
+  color: #b43b2f;
+}
+
+.command-bar {
+  display: grid;
+  grid-template-columns: auto minmax(340px, 1fr);
+  align-items: end;
+  gap: 18px 28px;
+  padding: 24px 0;
+  border-bottom: 1px solid #d8dddc;
+}
+
+.run-button {
+  min-width: 160px;
+}
+
+.custom-probe {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.custom-probe label {
+  margin-right: 4px;
+  color: #4b5558;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.custom-probe input {
+  width: 92px;
+  height: 42px;
+  padding: 0 12px;
+  color: #1f2628;
+  background: #ffffff;
+  border: 1px solid #aeb8b8;
+  border-radius: 5px;
+  font-family: Consolas, monospace;
+  font-weight: 700;
+  text-align: center;
+}
+
+.custom-result {
+  grid-column: 1 / -1;
+  min-height: 20px;
+  color: #5c676a;
+  font-family: Consolas, "Microsoft YaHei UI", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.verdict-band {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 2fr);
+  align-items: center;
+  gap: 28px;
+  padding: 23px 0;
+  border-bottom: 1px solid #d8dddc;
+}
+
+.verdict-band h2 {
+  font-size: 20px;
+}
+
+.verdict-band p {
+  margin: 0;
+  color: #556164;
+  line-height: 1.6;
+}
+
+.results-section,
+.relay-section,
+.mifare-section,
+.log-section {
+  padding-top: 30px;
+}
+
+.section-heading {
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 14px;
+}
+
+.mifare-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.file-button {
+  display: inline-flex;
+  align-items: center;
+}
+
+.file-button input {
+  display: none;
+}
+
+.section-heading h2 {
+  margin-top: 3px;
+  font-size: 21px;
+}
+
+.relay-status {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(170px, 0.8fr) minmax(190px, 1fr) minmax(260px, 1.4fr);
+  background: #ffffff;
+  border-block: 1px solid #d8dddc;
+}
+
+.relay-url-item code {
+  color: #2d3537;
+  font-family: Consolas, monospace;
+  font-size: 13px;
+}
+
+.relay-controls {
+  display: grid;
+  grid-template-columns: auto minmax(240px, 420px) auto minmax(180px, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 16px 0;
+  border-bottom: 1px solid #d8dddc;
+}
+
+.relay-controls label {
+  color: #4b5558;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.relay-controls input {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  color: #1f2628;
+  background: #ffffff;
+  border: 1px solid #aeb8b8;
+  border-radius: 5px;
+  font-family: Consolas, monospace;
+}
+
+.relay-result {
+  min-width: 0;
+  color: #5c676a;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 24px;
+  margin-left: 6px;
+  padding: 0 7px;
+  color: #4b5759;
+  background: #e1e6e5;
+  border-radius: 12px;
+  font-size: 12px;
+  vertical-align: 2px;
+}
+
+.probe-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.probe-card {
+  min-width: 0;
+  background: #ffffff;
+  border: 1px solid #ccd3d2;
+  border-radius: 7px;
+  box-shadow: 0 1px 2px rgba(25, 36, 36, 0.05);
+}
+
+.probe-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 76px;
+  padding: 16px;
+  border-bottom: 1px solid #e2e6e5;
+}
+
+.probe-card header > div {
+  min-width: 0;
+}
+
+.probe-card h3 {
+  margin-top: 5px;
+  font-size: 15px;
+  font-weight: 680;
+}
+
+.probe-code {
+  color: #475356;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.probe-code.aime {
+  color: #007f77;
+}
+
+.probe-code.generic {
+  color: #a35116;
+}
+
+.probe-status {
+  flex: 0 0 auto;
+  min-width: 58px;
+  padding: 4px 7px;
+  color: #5e696c;
+  background: #edf0ef;
+  border: 1px solid #d8dddc;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.probe-status[data-state="pending"] {
+  color: #7d5600;
+  background: #fff5d8;
+  border-color: #e9d394;
+}
+
+.probe-status[data-state="found"] {
+  color: #00665f;
+  background: #e4f4f1;
+  border-color: #9bcec7;
+}
+
+.probe-status[data-state="empty"] {
+  color: #5d6567;
+  background: #f0f2f2;
+}
+
+.probe-status[data-state="error"] {
+  color: #9f2e25;
+  background: #fff0ed;
+  border-color: #e6b5ae;
+}
+
+.probe-card dl {
+  margin: 0;
+}
+
+.probe-card dl > div {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  min-height: 46px;
+  border-bottom: 1px solid #edf0ef;
+}
+
+.probe-card dl > div:last-child {
+  border-bottom: 0;
+}
+
+.probe-card dt,
+.probe-card dd {
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.probe-card dt {
+  color: #667174;
+  background: #f8f9f9;
+}
+
+.probe-card dd {
+  min-width: 0;
+  color: #252c2e;
+  font-family: Consolas, "Microsoft YaHei UI", monospace;
+  overflow-wrap: anywhere;
+}
+
+.raw-log {
+  height: 310px;
+  overflow: auto;
+  color: #d9e4e2;
+  background: #1f2729;
+  border: 1px solid #141a1b;
+  border-radius: 6px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+.log-empty {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: #7f8d8f;
+}
+
+.log-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 10px;
+  min-height: 34px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #303a3c;
+}
+
+.log-row code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.log-direction {
+  color: #9caaa9;
+  font-weight: 700;
+}
+
+.log-direction.tx {
+  color: #5fd3c8;
+}
+
+.log-direction.rx {
+  color: #f1bd6f;
+}
+
+@media (max-width: 1080px) {
+  .probe-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .probe-card dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .probe-card dl > div:nth-child(odd) {
+    border-right: 1px solid #edf0ef;
+  }
+
+  .relay-status {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .relay-status .status-item:nth-child(2) {
+    border-right: 0;
+  }
+
+  .relay-status .status-item:nth-child(-n + 2) {
+    border-bottom: 1px solid #e2e6e5;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-header {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 19px 16px;
+  }
+
+  .header-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  main {
+    padding-inline: 12px;
+  }
+
+  .status-band,
+  .verdict-band,
+  .command-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .mifare-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .relay-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .relay-heading .button {
+    align-self: flex-start;
+  }
+
+  .relay-status,
+  .relay-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .relay-status .status-item,
+  .relay-status .status-item:nth-child(2) {
+    border-right: 0;
+    border-bottom: 1px solid #e2e6e5;
+  }
+
+  .relay-status .status-item:last-child {
+    border-bottom: 0;
+  }
+
+  .mifare-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .status-item,
+  .status-item:last-child {
+    border-right: 0;
+    border-bottom: 1px solid #e2e6e5;
+  }
+
+  .status-item:last-child {
+    border-bottom: 0;
+  }
+
+  .custom-probe {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 92px auto;
+    justify-content: stretch;
+  }
+
+  .custom-probe label {
+    align-self: center;
+  }
+
+  .probe-card dl {
+    display: block;
+  }
+
+  .probe-card dl > div:nth-child(odd) {
+    border-right: 0;
+  }
+
+  .probe-card dl > div {
+    grid-template-columns: 102px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 460px) {
+  .header-actions,
+  .custom-probe,
+  .mifare-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .custom-probe input {
+    width: 100%;
+    text-align: left;
+  }
+
+  .probe-card dl > div {
+    display: block;
+  }
+
+  .probe-card dt {
+    padding-bottom: 4px;
+  }
+
+  .probe-card dd {
+    padding-top: 4px;
+  }
+}
