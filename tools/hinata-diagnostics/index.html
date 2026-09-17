@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light" />
     <title>HINATA NFC 诊断</title>
-    <link rel="stylesheet" href="./styles.css?v=20260806-mifare" />
+    <link rel="stylesheet" href="./styles.css?v=20260917-relay1" />
   </head>
   <body>
     <header class="app-header">
@@ -120,6 +120,52 @@
         </div>
       </section>
 
+      <section class="relay-section" aria-labelledby="relay-heading">
+        <div class="section-heading relay-heading">
+          <div>
+            <p class="eyebrow">Loopback / AIMEIO Remote V2</p>
+            <h2 id="relay-heading">本机游戏桥接</h2>
+          </div>
+          <button id="relay-copy-button" class="button secondary" type="button">复制 serverUrl</button>
+        </div>
+
+        <div class="relay-status" aria-live="polite">
+          <div class="status-item">
+            <span class="status-label">中继服务</span>
+            <strong id="relay-server-state" class="status-value" data-state="disconnected">检测中</strong>
+          </div>
+          <div class="status-item">
+            <span class="status-label">HINATA DLL</span>
+            <strong id="relay-game-state" class="status-value" data-state="disconnected">未连接</strong>
+          </div>
+          <div class="status-item">
+            <span class="status-label">02FE 候选</span>
+            <strong id="relay-card-state" class="status-value">尚未扫描</strong>
+          </div>
+          <div class="status-item relay-url-item">
+            <span class="status-label">serverUrl</span>
+            <code id="relay-url" class="status-value">ws://127.0.0.1:8765/game</code>
+          </div>
+        </div>
+
+        <form id="relay-form" class="relay-controls">
+          <label for="relay-access-code">Access Code</label>
+          <input
+            id="relay-access-code"
+            type="password"
+            inputmode="numeric"
+            maxlength="20"
+            minlength="20"
+            pattern="[0-9]{20}"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="20 位数字"
+          />
+          <button id="relay-send-button" class="button primary" type="submit">发送至本机游戏</button>
+          <output id="relay-result" class="relay-result">-</output>
+        </form>
+      </section>
+
       <section class="mifare-section" aria-labelledby="mifare-heading">
         <div class="section-heading mifare-heading">
           <div>
@@ -168,6 +214,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=20260907-release1"></script>
+    <script type="module" src="./app.js?v=20260917-relay1"></script>
   </body>
 </html>

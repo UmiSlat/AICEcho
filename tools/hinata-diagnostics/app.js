@@ -45,6 +45,15 @@ const elements = {
   mifareDump: document.querySelector("#mifare-dump"),
   mifareRun: document.querySelector("#mifare-run-button"),
   mifareStatus: document.querySelector("#mifare-status"),
+  relayServer: document.querySelector("#relay-server-state"),
+  relayGame: document.querySelector("#relay-game-state"),
+  relayCard: document.querySelector("#relay-card-state"),
+  relayUrl: document.querySelector("#relay-url"),
+  relayCopy: document.querySelector("#relay-copy-button"),
+  relayForm: document.querySelector("#relay-form"),
+  relayAccessCode: document.querySelector("#relay-access-code"),
+  relaySend: document.querySelector("#relay-send-button"),
+  relayResult: document.querySelector("#relay-result"),
 };
 
 let device = null;
@@ -55,6 +64,11 @@ let logs = [];
 let results = {};
 let mifareDump = null;
 let mifareResult = null;
+let relayStatus = {
+  reachable: false,
+  gameConnected: false,
+  serverUrl: "ws://127.0.0.1:8765/game",
+};
 
 function setText(element, value) {
   element.textContent = value;
@@ -81,6 +95,7 @@ function setBusy(value) {
   elements.mifareRun.disabled = value || !device?.opened || !mifareDump;
   elements.mifareDump.disabled = value;
   elements.connect.textContent = device?.opened ? "断开设备" : "连接 HINATA";
+  updateRelayControls();
 }
 
 function addLog(direction, label, bytes, note = "") {
@@ -251,6 +266,7 @@ async function connectDevice() {
   if (!device.opened) await device.open();
   setText(elements.connection, "已连接");
   elements.connection.dataset.state = "connected";
+  setText(elements.relayResult, "-");
   setText(elements.device, `${device.productName || "HINATA"} · PID ${formatHex([
     (device.productId >> 8) & 0xff,
     device.productId & 0xff,
@@ -268,6 +284,9 @@ async function disconnectDevice() {
   setText(elements.connection, "未连接");
   elements.connection.dataset.state = "disconnected";
   setText(elements.device, "未选择设备");
+  if (findRelayCandidate()) {
+    setText(elements.relayResult, "已释放设备；请移开手机，再启动游戏");
+  }
 }
 
 async function releaseTargets() {
@@ -546,6 +565,98 @@ function renderProbe(code, result) {
     "detail",
     result?.detail ?? result?.read?.detail ?? (result?.read?.state === "read" ? "000B 读取成功" : "-"),
   );
+  updateRelayControls();
+}
+
+function findRelayCandidate() {
+  for (const code of ["4000", "FFFF", "88B4"]) {
+    const result = results[code];
+    const idm = result?.target?.idm;
+    if (
+      result?.state === "found" &&
+      result?.read?.state === "read" &&
+      idm &&
+      formatHex(idm).startsWith("02FE")
+    ) {
+      return { code, result, target: result.target };
+    }
+  }
+  return null;
+}
+
+function maskRelayIdm(idm) {
+  const value = formatHex(idm);
+  return `${value.slice(0, 4)}••••${value.slice(-4)}`;
+}
+
+function updateRelayControls() {
+  const candidate = findRelayCandidate();
+  const accessCodeValid = /^\d{20}$/.test(elements.relayAccessCode.value);
+
+  setText(elements.relayServer, relayStatus.reachable ? "运行中" : "不可用");
+  elements.relayServer.dataset.state = relayStatus.reachable ? "connected" : "error";
+  setText(
+    elements.relayGame,
+    relayStatus.gameConnected
+      ? `已连接${relayStatus.clientVersion ? ` · ${relayStatus.clientVersion}` : ""}`
+      : "未连接",
+  );
+  elements.relayGame.dataset.state = relayStatus.gameConnected ? "connected" : "disconnected";
+  setText(
+    elements.relayCard,
+    candidate ? `${candidate.code} · ${maskRelayIdm(candidate.target.idm)}` : "尚未扫描",
+  );
+  elements.relayCard.dataset.state = candidate ? "connected" : "disconnected";
+  setText(elements.relayUrl, relayStatus.serverUrl);
+
+  elements.relayCopy.disabled = !relayStatus.reachable;
+  elements.relaySend.disabled =
+    busy ||
+    Boolean(device?.opened) ||
+    !relayStatus.gameConnected ||
+    !candidate ||
+    !accessCodeValid;
+}
+
+async function refreshRelayStatus() {
+  try {
+    const response = await fetch("/api/relay/status", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const status = await response.json();
+    relayStatus = { ...status, reachable: true };
+  } catch {
+    relayStatus = {
+      reachable: false,
+      gameConnected: false,
+      serverUrl: "ws://127.0.0.1:8765/game",
+    };
+  }
+  updateRelayControls();
+}
+
+async function sendRelayCard() {
+  const candidate = findRelayCandidate();
+  if (!candidate) throw new Error("没有完成块读取的 02FE 候选卡");
+  if (device?.opened) throw new Error("请先断开 HINATA，再启动游戏");
+  if (!relayStatus.gameConnected) throw new Error("HINATA DLL 尚未连接本机中继");
+
+  const accessCode = elements.relayAccessCode.value;
+  if (!/^\d{20}$/.test(accessCode)) throw new Error("Access Code 必须是 20 位数字");
+  const response = await fetch("/api/relay/card", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: formatHex(candidate.target.idm),
+      pmm: formatHex(candidate.target.pmm),
+      accessCode,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
+
+  elements.relayAccessCode.value = "";
+  setText(elements.relayResult, "已转发至 HINATA DLL");
+  updateRelayControls();
 }
 
 function renderVerdict() {
@@ -712,6 +823,34 @@ elements.customCode.addEventListener("input", () => {
     .toUpperCase();
 });
 
+elements.relayAccessCode.addEventListener("input", () => {
+  elements.relayAccessCode.value = elements.relayAccessCode.value.replace(/\D/g, "").slice(0, 20);
+  setText(elements.relayResult, "-");
+  updateRelayControls();
+});
+
+elements.relayCopy.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(relayStatus.serverUrl);
+    setText(elements.relayResult, "serverUrl 已复制");
+  } catch (error) {
+    setText(elements.relayResult, describeError(error));
+  }
+});
+
+elements.relayForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setBusy(true);
+  try {
+    await sendRelayCard();
+  } catch (error) {
+    setText(elements.relayResult, describeError(error));
+  } finally {
+    setBusy(false);
+    await refreshRelayStatus();
+  }
+});
+
 elements.clearLog.addEventListener("click", () => {
   logs = [];
   renderLog();
@@ -737,3 +876,5 @@ renderMifareResult();
 renderLog();
 renderVerdict();
 setBusy(false);
+refreshRelayStatus();
+window.setInterval(refreshRelayStatus, 1500);

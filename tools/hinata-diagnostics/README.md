@@ -2,16 +2,17 @@
 
 This local WebHID tool separates FeliCa discovery, targeted System Code polling,
 and Aime service reads. It also provides a read-only NFC-A/MIFARE comparison for
-an emulated card. It does not send write, firmware, or configuration commands to
-the reader.
+an emulated card. A loopback-only bridge can forward a manually supplied Access
+Code to a local HINATA AimeIO DLL for the `02FE` compatibility experiment. The
+tool does not send write, firmware, or configuration commands to the reader.
 
 ## Run
 
 1. Close HINATA Client, maimai, and any other application using the reader.
-2. Start a localhost server from the repository root:
+2. Start the localhost diagnostics and relay server:
 
    ```powershell
-   python -m http.server 8765 --bind 127.0.0.1 --directory tools/hinata-diagnostics
+   node tools/hinata-diagnostics/relay-server.mjs
    ```
 
    On Windows, you can also double-click `start-hinata-diagnostics.bat` in this
@@ -24,6 +25,50 @@ the reader.
 
 WebHID requires a secure context. `localhost` and `127.0.0.1` are treated as
 secure contexts by Chrome; opening `index.html` directly is not supported.
+
+## Local game bridge
+
+This is a reader-side proof for the case where Android can expose only an
+`02FE` NFCID2 but blocks `012E`. It does not change the Android RF identity.
+Instead, the local HINATA DLL receives a V2 AIC record and returns its real
+10-byte Access Code through the AimeIO Aime-ID path rather than returning the
+`02FE` IDm through the FeliCa path.
+
+1. Add the loopback URL to the game's existing AimeIO section while keeping the
+   HINATA DLL path:
+
+   ```ini
+   [AIMEIO]
+   path=hinata.dll
+   serverUrl=ws://127.0.0.1:8765/game
+   ```
+
+2. Keep the game closed, connect HINATA in the page, and run the FeliCa
+   diagnostic. The bridge accepts only a fully read `02FE` candidate.
+3. Disconnect HINATA in the page, then physically remove the phone from the
+   reader before launching the game. Leaving it on the reader lets the DLL's
+   physical-card backend win the race and invalidates the relay test. The page
+   reports the DLL version when its remote backend is connected.
+4. Enter the 20-digit Access Code from your own card backup and send it once.
+
+The relay binds only to `127.0.0.1`, accepts browser submissions only from its
+own page, validates the `02FE` IDm and protocol-v2 handshake, and does not log or
+persist the Access Code. The field is cleared after a successful handoff. The
+Access Code is intentionally not derived from the IDm and is never included in
+an exported diagnostic report. The native DLL WebSocket rejects browser-origin
+upgrades, and a ping/pong heartbeat removes half-open clients so the page does
+not keep reporting a closed game as connected.
+
+HINATA DLL 1.1.2 separately writes the complete remotely supplied Access Code
+to `AMDaemon/hinata.log` at info level. Treat that downstream log as sensitive;
+do not publish it and remove or secure it after testing. Remove `serverUrl` to
+restore the previous game configuration.
+
+Local validation with SDEZ 1.67 and HINATA DLL 1.1.2 confirmed that both the
+fixed `02FE001145141919` route and the `02FE`-plus-original-suffix route returned
+to the same existing account when the phone was removed and the saved Access
+Code was supplied through this bridge. This result covers only the local
+AimeIO/private-server path, not an unmodified cabinet's RF acceptance.
 
 ## Result meaning
 
@@ -60,10 +105,12 @@ HINATA `E2`/PN532 frames are retained in the exported report.
 The local game launch script injects `mai2hook.dll` into `amdaemon.exe` and the
 hook loads `hinata.dll` through the segatools AimeIO interface. That path can
 validate game-side card handling, but it does not reproduce the original Sega
-reader's RF polling or System Code filter.
+reader's RF polling or System Code filter. A successful bridge test proves that
+the local game can preserve account identity through AimeIO; it does not prove
+that an unmodified official cabinet will accept `02FE` over RF.
 
 ## Test
 
 ```powershell
-node --test tools/hinata-diagnostics/protocol.test.mjs
+node --test tools/hinata-diagnostics/*.test.mjs
 ```
