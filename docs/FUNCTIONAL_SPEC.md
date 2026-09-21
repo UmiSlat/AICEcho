@@ -10,9 +10,30 @@ an optional 20-digit printed Access Code, and optional 16-byte SPAD0 and ID-bloc
 survive process restarts. Deleting or reordering profiles must not select a different
 profile accidentally.
 
-The printed Access Code is display-only local metadata. Physical-card profile
-capture does not infer or save it, and it does not alter HCE-F registration or
-the emulated card image.
+The Access Code is display-only local metadata and does not alter HCE-F registration
+or the emulated card image. Supported physical-card capture may fill it into the
+editor, but it is stored only after the user explicitly saves the profile.
+
+## Backup and import
+
+The Settings page exports all profiles as an unencrypted, versioned JSON document
+through Android's Storage Access Framework. The document includes the fixed system
+code and PMm metadata, export time, selected-profile identifier, and a SHA-256
+integrity value calculated over a canonical representation of every field. The
+checksum detects accidental damage; it is not authentication or encryption.
+
+Import accepts at most 512 KiB and 256 profiles. It rejects malformed UTF-8/JSON,
+unsupported versions, invalid field lengths, duplicate stable profile identifiers,
+an invalid selected-profile reference, and an integrity mismatch before changing
+local storage. The preview offers these explicit operations:
+
+- Merge keeps local ordering, replaces records with the same stable identifier,
+  and appends new records.
+- Replace removes every local profile and installs only the imported records.
+
+Replace never restores the backed-up selection automatically. Merge preserves the
+current selection only when that record was not changed by the import. Otherwise
+the foreground HCE-F service is disabled and the user must select a profile again.
 
 Normal mode registers the profile IDm with Android. Compatibility mode registers
 `02FE001145141919` while retaining the profile IDm inside the emulated card image.
@@ -28,8 +49,7 @@ FeliCa Read Without Encryption (`06`) block-list elements and replies with comma
 block. The read-only service code is `000B` in little-endian packet order.
 
 Write Without Encryption (`08`) is acknowledged with response `09`; profile data is
-not modified. Unsupported commands return the four-byte compatibility response
-`04 11 45 14`. Malformed frames are ignored.
+not modified. Unsupported commands and malformed frames are ignored.
 
 The default card image contains zero-filled user blocks, an all-`FF` block `0E`,
 the selected profile IDm in block `82`, PMm metadata in block `83`, system code in

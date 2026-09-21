@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Typeface
 import android.nfc.NfcAdapter
+import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
@@ -22,6 +23,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -42,6 +46,8 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import io.github.umislat.aimesimulator.R
 import io.github.umislat.aimesimulator.ThemeSettings
+import io.github.umislat.aimesimulator.data.CardBackupCodec
+import io.github.umislat.aimesimulator.data.CardImportPlanner
 import io.github.umislat.aimesimulator.data.CardProfile
 import io.github.umislat.aimesimulator.data.CardStore
 import io.github.umislat.aimesimulator.nfc.DefaultNfcAppChecker
@@ -50,6 +56,12 @@ import io.github.umislat.aimesimulator.nfc.HceActivationRetryPolicy
 import io.github.umislat.aimesimulator.nfc.HceSession
 import io.github.umislat.aimesimulator.nfc.NfcAdapterStatePolicy
 import io.github.umislat.aimesimulator.root.PmmManager
+import java.io.ByteArrayOutputStream
+import java.text.DateFormat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
     private lateinit var store: CardStore
@@ -90,6 +102,19 @@ class MainActivity : AppCompatActivity() {
     private var pmmSwitch: MaterialSwitch? = null
     private var pmmStatus: TextView? = null
     private var pmmProgress: LinearProgressIndicator? = null
+    private val backupIo = Executors.newSingleThreadExecutor()
+
+    private val backupExporter = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) writeBackup(uri)
+    }
+
+    private val backupImporter = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) readBackup(uri)
+    }
 
     private val reader = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode != Activity.RESULT_OK) return@registerForActivityResult
@@ -137,6 +162,11 @@ class MainActivity : AppCompatActivity() {
         cancelActivationRetry()
         session.deactivate(this)
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        backupIo.shutdown()
+        super.onDestroy()
     }
 
     private fun registerNfcStateReceiver() {
@@ -296,7 +326,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun statusSummaryCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(22).toFloat()
+        radius = dp(CARD_RADIUS_DP).toFloat()
         strokeWidth = dp(1)
         isClickable = true
         isFocusable = true
@@ -338,7 +368,7 @@ class MainActivity : AppCompatActivity() {
                 if (selected) com.google.android.material.R.attr.colorPrimary
                 else com.google.android.material.R.attr.colorOutlineVariant
             )
-            radius = dp(20).toFloat()
+            radius = dp(CARD_RADIUS_DP).toFloat()
             setOnClickListener {
                 store.select(profile.profileId)
                 activateSelected()
@@ -403,7 +433,7 @@ class MainActivity : AppCompatActivity() {
         val content = verticalLayout(this)
         content.addView(sectionTitle(R.string.simulation_status))
         content.addView(MaterialCardView(this).apply {
-            radius = dp(20).toFloat()
+            radius = dp(CARD_RADIUS_DP).toFloat()
             strokeWidth = dp(1)
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
@@ -419,6 +449,19 @@ class MainActivity : AppCompatActivity() {
                     alpha = 0.7f
                     setPadding(0, dp(6), 0, 0)
                 })
+                store.selectedProfile()?.let { profile ->
+                    addView(TextView(this@MainActivity).apply {
+                        text = getString(
+                            R.string.current_identity_summary,
+                            profile.label,
+                            if (store.showIdm()) profile.routedIdm(store.compatibilityMode())
+                            else getString(R.string.hidden_value)
+                        )
+                        textSize = 14f
+                        setTypeface(typeface, Typeface.BOLD)
+                        setPadding(0, dp(12), 0, 0)
+                    })
+                }
                 val retryAction = MaterialButton(
                     this@MainActivity,
                     null,
@@ -434,8 +477,6 @@ class MainActivity : AppCompatActivity() {
                 })
             })
         })
-        content.addView(sectionTitle(R.string.current_profile))
-        content.addView(currentProfileCard())
         content.addView(sectionTitle(R.string.route_mode))
         content.addView(compatibilityModeSelector())
         content.addView(TextView(this).apply {
@@ -481,13 +522,16 @@ class MainActivity : AppCompatActivity() {
         ).apply {
             this.id = id
             setText(label)
+            textSize = 12f
+            maxLines = 2
             minWidth = 0
             minimumWidth = 0
+            minHeight = dp(48)
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
 
     private fun defaultNfcAppCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(20).toFloat()
+        radius = dp(CARD_RADIUS_DP).toFloat()
         strokeWidth = dp(1)
         addView(LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.VERTICAL
@@ -514,59 +558,8 @@ class MainActivity : AppCompatActivity() {
             })
         })
     }
-    private fun currentProfileCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(20).toFloat()
-        strokeWidth = dp(1)
-        addView(LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(14))
-            val profile = store.selectedProfile()
-            if (profile == null) {
-                addView(bodyText(R.string.select_or_add_card))
-            } else {
-                addView(detailLine(R.string.card_name, profile.label))
-                addView(detailLine(
-                    R.string.idm_label,
-                    if (store.showIdm()) profile.idm else getString(R.string.hidden_value)
-                ))
-                addView(detailLine(
-                    R.string.access_code,
-                    when {
-                        profile.accessCode == null -> getString(R.string.access_code_not_set)
-                        store.showAccessCode() -> profile.formattedAccessCode().orEmpty()
-                        else -> getString(R.string.access_code_hidden)
-                    }
-                ))
-                addView(detailLine(
-                    R.string.route_mode,
-                    getString(if (store.compatibilityMode()) R.string.compatibility_mode
-                        else R.string.normal_mode)
-                ))
-                addView(detailLine(R.string.system_code_label, HceSession.SYSTEM_CODE))
-                addView(detailLine(R.string.pmm_value_label, STANDARD_PMM_DISPLAY))
-            }
-        })
-    }
-
-    private fun detailLine(@androidx.annotation.StringRes label: Int, value: String): View =
-        LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(6), 0, dp(6))
-            addView(TextView(this@MainActivity).apply {
-                setText(label)
-                textSize = 14f
-                alpha = 0.68f
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(TextView(this@MainActivity).apply {
-                text = value
-                textSize = 14f
-                gravity = Gravity.END
-                setTypeface(typeface, Typeface.BOLD)
-            })
-        }
-
     private fun pmmCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(20).toFloat()
+        radius = dp(CARD_RADIUS_DP).toFloat()
         strokeWidth = dp(1)
         addView(LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.VERTICAL
@@ -602,46 +595,56 @@ class MainActivity : AppCompatActivity() {
         val scroll = ScrollView(this).apply { isFillViewport = true }
         val content = verticalLayout(this)
         content.addView(sectionTitle(R.string.appearance))
-        content.addView(TextView(this).apply {
-            setText(R.string.theme_mode)
-            textSize = 16f
-            setPadding(0, 0, 0, dp(8))
-        })
-        content.addView(buildThemeSelector())
-
         val dynamicAvailable = DynamicColors.isDynamicColorAvailable()
-        content.addView(MaterialSwitch(this).apply {
-            setText(R.string.dynamic_colors)
-            isChecked = dynamicAvailable && ThemeSettings.dynamicColorsEnabled(this@MainActivity)
-            isEnabled = dynamicAvailable
-            setOnCheckedChangeListener { button, enabled ->
-                if (button.isPressed) {
-                    ThemeSettings.setDynamicColorsEnabled(this@MainActivity, enabled)
-                    recreate()
+        content.addView(settingsGroupCard().apply {
+            val group = getChildAt(0) as LinearLayout
+            group.addView(TextView(this@MainActivity).apply {
+                setText(R.string.theme_mode)
+                textSize = 15f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, 0, 0, dp(8))
+            })
+            group.addView(buildThemeSelector())
+            group.addView(MaterialSwitch(this@MainActivity).apply {
+                setText(R.string.dynamic_colors)
+                isChecked = dynamicAvailable &&
+                    ThemeSettings.dynamicColorsEnabled(this@MainActivity)
+                isEnabled = dynamicAvailable
+                setPadding(0, dp(8), 0, 0)
+                setOnCheckedChangeListener { button, enabled ->
+                    if (button.isPressed) {
+                        ThemeSettings.setDynamicColorsEnabled(this@MainActivity, enabled)
+                        recreate()
+                    }
                 }
-            }
+            })
+            group.addView(settingsSummary(
+                if (dynamicAvailable) R.string.dynamic_colors_summary
+                else R.string.dynamic_colors_unavailable
+            ))
         })
-        content.addView(TextView(this).apply {
-            setText(if (dynamicAvailable) R.string.dynamic_colors_summary
-                else R.string.dynamic_colors_unavailable)
-            textSize = 13f
-            alpha = 0.72f
-        })
+
+        content.addView(sectionTitle(R.string.card_data))
+        content.addView(cardDataSettingsCard())
 
         content.addView(sectionTitle(R.string.privacy))
-        content.addView(MaterialSwitch(this).apply {
-            setText(R.string.show_idm)
-            isChecked = store.showIdm()
-            setOnCheckedChangeListener { button, value ->
-                if (button.isPressed) store.setShowIdm(value)
-            }
-        })
-        content.addView(MaterialSwitch(this).apply {
-            setText(R.string.show_access_code)
-            isChecked = store.showAccessCode()
-            setOnCheckedChangeListener { button, value ->
-                if (button.isPressed) store.setShowAccessCode(value)
-            }
+        content.addView(settingsGroupCard().apply {
+            val group = getChildAt(0) as LinearLayout
+            group.addView(MaterialSwitch(this@MainActivity).apply {
+                setText(R.string.show_idm)
+                isChecked = store.showIdm()
+                setOnCheckedChangeListener { button, value ->
+                    if (button.isPressed) store.setShowIdm(value)
+                }
+            })
+            group.addView(MaterialSwitch(this@MainActivity).apply {
+                setText(R.string.show_access_code)
+                isChecked = store.showAccessCode()
+                setOnCheckedChangeListener { button, value ->
+                    if (button.isPressed) store.setShowAccessCode(value)
+                }
+            })
+            group.addView(settingsSummary(R.string.profile_visibility_summary))
         })
 
         content.addView(sectionTitle(R.string.application_section))
@@ -657,6 +660,73 @@ class MainActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(-1, -2))
         scroll.addView(content)
         return scroll
+    }
+
+    private fun settingsGroupCard(): MaterialCardView = MaterialCardView(this).apply {
+        radius = dp(CARD_RADIUS_DP).toFloat()
+        strokeWidth = dp(1)
+        cardElevation = 0f
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(14), dp(18), dp(14))
+        })
+    }
+
+    private fun settingsSummary(@androidx.annotation.StringRes text: Int): TextView =
+        TextView(this).apply {
+            setText(text)
+            textSize = 13f
+            alpha = 0.72f
+            setPadding(0, dp(4), 0, 0)
+        }
+
+    private fun cardDataSettingsCard(): MaterialCardView = settingsGroupCard().apply {
+        val group = getChildAt(0) as LinearLayout
+        val profiles = store.profiles()
+        val count = resources.getQuantityString(
+            R.plurals.card_profile_count,
+            profiles.size,
+            profiles.size
+        )
+        group.addView(TextView(this@MainActivity).apply {
+            setText(R.string.card_data_local_title)
+            textSize = 16f
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        group.addView(TextView(this@MainActivity).apply {
+            text = getString(R.string.card_data_local_summary, count)
+            textSize = 13f
+            alpha = 0.76f
+            setPadding(0, dp(5), 0, dp(10))
+        })
+        group.addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(backupActionButton(R.string.export_backup, R.drawable.ic_export).apply {
+                isEnabled = profiles.isNotEmpty()
+                setOnClickListener { confirmBackupExport() }
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(5) })
+            addView(backupActionButton(R.string.import_backup, R.drawable.ic_import).apply {
+                setOnClickListener { backupImporter.launch(arrayOf("application/json", "text/json")) }
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(5) })
+        })
+    }
+
+    private fun backupActionButton(
+        @androidx.annotation.StringRes text: Int,
+        @androidx.annotation.DrawableRes icon: Int
+    ): MaterialButton = MaterialButton(
+        this,
+        null,
+        com.google.android.material.R.attr.materialButtonOutlinedStyle
+    ).apply {
+        setText(text)
+        setIconResource(icon)
+        iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
+        textSize = 13f
+        maxLines = 2
+        minWidth = 0
+        minimumWidth = 0
+        minHeight = dp(48)
     }
 
     private fun buildThemeSelector(): MaterialButtonToggleGroup {
@@ -697,6 +767,11 @@ class MainActivity : AppCompatActivity() {
         this.id = id
         setText(text)
         isCheckable = true
+        textSize = 12f
+        maxLines = 2
+        minWidth = 0
+        minimumWidth = 0
+        minHeight = dp(48)
         layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
     }
 
@@ -749,13 +824,163 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    private fun confirmBackupExport() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.export_backup)
+            .setMessage(R.string.export_backup_warning)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.continue_action) { _, _ ->
+                backupExporter.launch(defaultBackupFileName())
+            }
+            .show()
+    }
+
+    private fun defaultBackupFileName(): String {
+        val timestamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(Date())
+        return "AimeSimulator-backup-$timestamp.json"
+    }
+
+    private fun writeBackup(uri: Uri) {
+        val snapshot = store.backupSnapshot()
+        backupIo.execute {
+            val success = runCatching {
+                val encoded = CardBackupCodec.encode(snapshot)
+                require(encoded.toByteArray(Charsets.UTF_8).size <= CardBackupCodec.MAX_BACKUP_BYTES)
+                contentResolver.openOutputStream(uri, "wt")?.use { output ->
+                    output.write(encoded.toByteArray(Charsets.UTF_8))
+                    output.flush()
+                } ?: error("Unable to open backup destination")
+            }.isSuccess
+            postBackupResult(
+                if (success) R.string.export_backup_complete else R.string.export_backup_failed
+            )
+        }
+    }
+
+    private fun readBackup(uri: Uri) {
+        backupIo.execute {
+            val result = runCatching {
+                contentResolver.openInputStream(uri)?.use { input ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(8 * 1024)
+                    while (output.size() <= CardBackupCodec.MAX_BACKUP_BYTES) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                } ?: error("Unable to open backup")
+            }.fold(
+                onSuccess = CardBackupCodec::decode,
+                onFailure = {
+                    CardBackupCodec.DecodeResult.Failure(
+                        CardBackupCodec.FailureReason.MALFORMED
+                    )
+                }
+            )
+            if (!isFinishing && !isDestroyed) {
+                runOnUiThread { handleBackupDecodeResult(result) }
+            }
+        }
+    }
+
+    private fun postBackupResult(@androidx.annotation.StringRes message: Int) {
+        if (isFinishing || isDestroyed) return
+        runOnUiThread {
+            Snackbar.make(contentHost, message, Snackbar.LENGTH_LONG).show()
+        }
+    }
+
+    private fun handleBackupDecodeResult(result: CardBackupCodec.DecodeResult) {
+        when (result) {
+            is CardBackupCodec.DecodeResult.Success -> showImportPreview(result.snapshot)
+            is CardBackupCodec.DecodeResult.Failure -> Snackbar.make(
+                contentHost,
+                backupFailureMessage(result.reason),
+                Snackbar.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    @androidx.annotation.StringRes
+    private fun backupFailureMessage(reason: CardBackupCodec.FailureReason): Int = when (reason) {
+        CardBackupCodec.FailureReason.EMPTY,
+        CardBackupCodec.FailureReason.MALFORMED,
+        CardBackupCodec.FailureReason.INVALID_PROFILE,
+        CardBackupCodec.FailureReason.DUPLICATE_PROFILE,
+        CardBackupCodec.FailureReason.INVALID_SELECTION -> R.string.import_backup_invalid
+        CardBackupCodec.FailureReason.TOO_LARGE,
+        CardBackupCodec.FailureReason.TOO_MANY_PROFILES -> R.string.import_backup_too_large
+        CardBackupCodec.FailureReason.UNSUPPORTED_VERSION ->
+            R.string.import_backup_unsupported_version
+        CardBackupCodec.FailureReason.INTEGRITY_CHECK_FAILED ->
+            R.string.import_backup_integrity_failed
+    }
+
+    private fun showImportPreview(snapshot: CardBackupCodec.Snapshot) {
+        val exportedAt = DateFormat.getDateTimeInstance(
+            DateFormat.MEDIUM,
+            DateFormat.SHORT
+        ).format(Date(snapshot.exportedAtEpochMillis))
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.import_backup)
+            .setMessage(getString(
+                R.string.import_backup_preview,
+                snapshot.profiles.size,
+                exportedAt
+            ))
+            .setNegativeButton(android.R.string.cancel, null)
+            .setNeutralButton(R.string.import_backup_merge) { _, _ ->
+                applyBackupImport(snapshot, CardImportPlanner.Mode.MERGE)
+            }
+            .setPositiveButton(R.string.import_backup_replace) { _, _ ->
+                confirmBackupReplacement(snapshot)
+            }
+            .show()
+    }
+
+    private fun confirmBackupReplacement(snapshot: CardBackupCodec.Snapshot) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.import_backup_replace_title)
+            .setMessage(R.string.import_backup_replace_warning)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.import_backup_replace) { _, _ ->
+                applyBackupImport(snapshot, CardImportPlanner.Mode.REPLACE)
+            }
+            .show()
+    }
+
+    private fun applyBackupImport(
+        snapshot: CardBackupCodec.Snapshot,
+        mode: CardImportPlanner.Mode
+    ) {
+        val previousSelectedId = store.selectedProfile()?.profileId
+        val plan = store.importProfiles(snapshot, mode)
+        if (previousSelectedId != null && plan.selectedProfileId == null) {
+            cancelActivationRetry()
+            session.deactivate(this)
+            lastHceReport = null
+            setHceStatus(getString(R.string.select_or_add_card))
+        }
+        showPage(TAB_SETTINGS, refreshPmm = false)
+        Snackbar.make(
+            contentHost,
+            resources.getQuantityString(
+                R.plurals.import_backup_complete,
+                snapshot.profiles.size,
+                snapshot.profiles.size
+            ),
+            Snackbar.LENGTH_LONG
+        ).show()
+    }
+
     private fun addMethodCard(
         icon: Int,
         title: Int,
         summary: Int,
         action: () -> Unit
     ): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(20).toFloat()
+        radius = dp(CARD_RADIUS_DP).toFloat()
         strokeWidth = dp(1)
         cardElevation = 0f
         isClickable = true
@@ -1077,7 +1302,20 @@ class MainActivity : AppCompatActivity() {
         }
         val dialog = BottomSheetDialog(this)
         dialog.setContentView(root)
-        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        dialog.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val systemBottom = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars()
+            ).bottom
+            val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            view.setPadding(
+                view.paddingLeft,
+                view.paddingTop,
+                view.paddingRight,
+                maxOf(systemBottom, imeBottom)
+            )
+            insets
+        }
         cancel.setOnClickListener { dialog.dismiss() }
         save.setOnClickListener {
             val idmValid = validateHexField(idm, 16, optional = false)
@@ -1117,6 +1355,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         dialog.show()
+        ViewCompat.requestApplyInsets(root)
     }
 
     private fun editorField(
@@ -1215,7 +1454,7 @@ class MainActivity : AppCompatActivity() {
         const val SERVICE_RESTART_RETRY_DELAY_MS = 1_000L
         const val MAX_LINK_RELEASE_RETRIES = 20
         const val LINK_RELEASE_RETRY_DELAY_MS = 500L
-        const val STANDARD_PMM_DISPLAY = "00F1 0000 0001 4300"
+        const val CARD_RADIUS_DP = 8
         const val STATE_SELECTED_TAB = "main.selected.tab"
         const val STATE_PMM_STATUS = "main.pmm.status"
         const val STATE_PMM_DETAIL = "main.pmm.detail"

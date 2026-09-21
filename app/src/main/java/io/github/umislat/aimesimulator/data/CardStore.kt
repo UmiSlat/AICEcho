@@ -60,6 +60,37 @@ internal class CardStore(context: Context) {
         }
     }
 
+    @Synchronized
+    fun backupSnapshot(nowEpochMillis: Long = System.currentTimeMillis()): CardBackupCodec.Snapshot =
+        CardBackupCodec.Snapshot(
+            profiles = profiles(),
+            selectedProfileId = selectedProfile()?.profileId,
+            exportedAtEpochMillis = nowEpochMillis
+        )
+
+    @Synchronized
+    fun importProfiles(
+        snapshot: CardBackupCodec.Snapshot,
+        mode: CardImportPlanner.Mode
+    ): CardImportPlanner.Plan {
+        val plan = CardImportPlanner.plan(
+            existingProfiles = profiles(),
+            existingSelectedProfileId = selectedProfile()?.profileId,
+            importedProfiles = snapshot.profiles,
+            mode = mode
+        )
+        val encodedProfiles = encodeProfiles(plan.profiles)
+        preferences.edit {
+            putString(KEY_PROFILES, encodedProfiles)
+            if (plan.selectedProfileId == null) remove(KEY_SELECTED)
+            else putString(KEY_SELECTED, plan.selectedProfileId)
+        }
+        cachedProfilesSource = encodedProfiles
+        cachedProfiles = plan.profiles
+        cachedProfilesInitialized = true
+        return plan
+    }
+
     fun compatibilityMode(): Boolean = preferences.getBoolean(KEY_COMPATIBILITY, false)
 
     fun setCompatibilityMode(enabled: Boolean) {
