@@ -12,7 +12,7 @@ internal data class CardProfile(
 ) {
     fun routedIdm(routeMode: IdmRouteMode): String = when (routeMode) {
         IdmRouteMode.ORIGINAL -> idm
-        IdmRouteMode.FIXED_COMPATIBILITY -> COMPATIBILITY_IDM
+        IdmRouteMode.GENERATED_COMPATIBILITY -> CompatibilityIdm.generate(idm)
         IdmRouteMode.PREFIX_COMPATIBILITY -> COMPATIBILITY_PREFIX + idm.drop(4)
     }
 
@@ -20,7 +20,6 @@ internal data class CardProfile(
 
     companion object {
         const val DEFAULT_IDM = "02FE000000000000"
-        const val COMPATIBILITY_IDM = "02FE001145141919"
         const val COMPATIBILITY_PREFIX = "02FE"
 
         fun create(

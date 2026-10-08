@@ -23,10 +23,8 @@ internal class HceSession(private val context: Context) {
     }
 
     private val component = ComponentName(context, AimeHostService::class.java)
-    // Keep a known-good adapter across NFC service restarts. Calling isEnabled() on this
-    // instance activates Android's built-in dead-service recovery and refreshes the NFC-F
-    // Binder, while a fresh getDefaultAdapter() call can remain null through a cached
-    // NfcManager on some vendor builds.
+    // Retain the adapter for Android's adapter-level recovery. Some vendor builds keep
+    // a separate stale NFC-F Binder, so this does not guarantee NFC-F recovery.
     private var adapter: NfcAdapter? = runCatching {
         NfcAdapter.getDefaultAdapter(context)
     }.getOrNull()
@@ -48,12 +46,20 @@ internal class HceSession(private val context: Context) {
         profile: CardProfile,
         routeMode: IdmRouteMode,
         systemCode: String = SYSTEM_CODE
+    ): PersistedHceRouteWorkflow.Result = activatePersistedRoute(
+        activity, profile.routedIdm(routeMode), systemCode
+    )
+
+    fun activatePersistedRoute(
+        activity: Activity,
+        nfcid2: String,
+        systemCode: String = SYSTEM_CODE
     ): PersistedHceRouteWorkflow.Result {
         val workflow = PersistedHceRouteWorkflow(
             backend = androidBackend(activity, component),
             failureReporter = ::persistedRouteFailure
         )
-        return workflow.activate(profile.routedIdm(routeMode), systemCode)
+        return workflow.activate(nfcid2, systemCode)
     }
 
     private fun activateProfile(

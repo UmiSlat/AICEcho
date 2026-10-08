@@ -15,6 +15,11 @@ internal class CardStore(context: Context) {
     private var cachedProfiles = emptyList<CardProfile>()
 
     init {
+        if (!preferences.contains(KEY_PERSISTED_ROUTE_ONLY_MODE)) {
+            val newInstallation = !preferences.contains(KEY_MIGRATION_DONE) &&
+                !preferences.contains(KEY_PROFILES) && !File(appContext.filesDir, "cards.json").isFile
+            preferences.edit { putBoolean(KEY_PERSISTED_ROUTE_ONLY_MODE, newInstallation) }
+        }
         migrateExistingInstallation()
         migrateRouteMode()
     }
@@ -105,6 +110,12 @@ internal class CardStore(context: Context) {
 
     fun setPersistedRouteOnlyMode(enabled: Boolean) {
         preferences.edit { putBoolean(KEY_PERSISTED_ROUTE_ONLY_MODE, enabled) }
+    }
+
+    fun advancedMode(): Boolean = preferences.getBoolean(KEY_ADVANCED_MODE, false)
+
+    fun setAdvancedMode(enabled: Boolean) {
+        preferences.edit { putBoolean(KEY_ADVANCED_MODE, enabled) }
     }
 
     fun showIdm(): Boolean = preferences.getBoolean(KEY_SHOW_IDM, true)
@@ -198,16 +209,26 @@ internal class CardStore(context: Context) {
     }
 
     private fun migrateRouteMode() {
-        if (preferences.contains(KEY_IDM_ROUTE_MODE)) return
-        val mode = if (preferences.getBoolean(KEY_COMPATIBILITY, false)) {
-            IdmRouteMode.FIXED_COMPATIBILITY
-        } else {
-            IdmRouteMode.ORIGINAL
-        }
+        val storedMode = preferences.getString(KEY_IDM_ROUTE_MODE, null)
+        val legacyFixed = storedMode == "FIXED_COMPATIBILITY" ||
+            (storedMode == null && preferences.getBoolean(KEY_COMPATIBILITY, false))
+        if (storedMode != null && !legacyFixed) return
         preferences.edit {
-            putString(KEY_IDM_ROUTE_MODE, mode.name)
+            putString(KEY_IDM_ROUTE_MODE, IdmRouteMode.ORIGINAL.name)
             remove(KEY_COMPATIBILITY)
+            if (legacyFixed) {
+                remove(KEY_SELECTED)
+                putBoolean(KEY_PERSISTED_ROUTE_ONLY_MODE, false)
+                putBoolean(KEY_COMPATIBILITY_RETIRED_NOTICE, true)
+            }
         }
+    }
+
+    fun compatibilityRetiredNoticePending(): Boolean =
+        preferences.getBoolean(KEY_COMPATIBILITY_RETIRED_NOTICE, false)
+
+    fun dismissCompatibilityRetiredNotice() {
+        preferences.edit { remove(KEY_COMPATIBILITY_RETIRED_NOTICE) }
     }
 
     private fun JSONObject.optNullableString(key: String): String? =
@@ -219,8 +240,10 @@ internal class CardStore(context: Context) {
         private const val KEY_PROFILES = "profiles_v2"
         private const val KEY_SELECTED = "selected_profile"
         private const val KEY_COMPATIBILITY = "compatibility_mode"
+        private const val KEY_COMPATIBILITY_RETIRED_NOTICE = "compatibility_retired_notice"
         private const val KEY_IDM_ROUTE_MODE = "idm_route_mode"
         private const val KEY_PERSISTED_ROUTE_ONLY_MODE = "persisted_route_only_mode"
+        private const val KEY_ADVANCED_MODE = "advanced_mode"
         private const val KEY_SHOW_IDM = "show_idm"
         private const val KEY_SHOW_ACCESS_CODE = "show_access_code"
         private const val KEY_DEFAULT_NFC_GUIDANCE_SHOWN = "default_nfc_guidance_shown"

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<host-nfcf-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/lab_description">
+    <system-code-filter android:name="4000" />
+    <nfcid2-filter android:name="02FE6C6162323031" />
+    <t3tPmm-filter android:name="00F1000000014300" />
+</host-nfcf-service>

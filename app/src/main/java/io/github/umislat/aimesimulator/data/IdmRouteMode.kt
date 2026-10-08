@@ -2,7 +2,7 @@ package io.github.umislat.aimesimulator.data
 
 internal enum class IdmRouteMode {
     ORIGINAL,
-    FIXED_COMPATIBILITY,
+    GENERATED_COMPATIBILITY,
     PREFIX_COMPATIBILITY;
 
     companion object {

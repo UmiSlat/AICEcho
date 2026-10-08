@@ -4,8 +4,10 @@ import android.nfc.cardemulation.HostNfcFService
 import android.os.Bundle
 import android.util.Log
 import io.github.umislat.aimesimulator.BuildConfig
+import io.github.umislat.aimesimulator.data.CardBackupCodec
 import io.github.umislat.aimesimulator.data.CardProfile
 import io.github.umislat.aimesimulator.data.CardStore
+import io.github.umislat.aimesimulator.data.HexCodec
 
 class AimeHostService : HostNfcFService() {
     private val store by lazy { CardStore(this) }
@@ -13,8 +15,10 @@ class AimeHostService : HostNfcFService() {
 
     override fun processNfcFPacket(commandPacket: ByteArray, extras: Bundle?): ByteArray? {
         val request = FelicaCodec.decodeRequest(commandPacket) ?: return null
-        val profile = store.selectedProfile() ?: CardProfile.fallback()
-        val image = imageFor(profile)
+        val profile = store.selectedProfile() ?: return null
+        val rfIdm = profile.routedIdm(store.idmRouteMode())
+        if (HexCodec.encode(request.nfcid2) != rfIdm) return null
+        val image = imageFor(profile, rfIdm)
 
         val response = when (request.command) {
             FelicaCodec.READ_COMMAND -> {
@@ -32,7 +36,7 @@ class AimeHostService : HostNfcFService() {
                     }
                 }
             }
-            FelicaCodec.WRITE_COMMAND -> FelicaCodec.writeResponse(request.nfcid2)
+            FelicaCodec.WRITE_COMMAND -> FelicaCodec.writeResponse(request.nfcid2, 0x01, 0xA8)
             else -> null
         }
 
@@ -50,10 +54,10 @@ class AimeHostService : HostNfcFService() {
     }
 
     @Synchronized
-    private fun imageFor(profile: CardProfile): CardImage {
-        imageCache?.takeIf { it.profile == profile }?.let { return it.image }
-        return CardImage(profile).also { image ->
-            imageCache = CachedImage(profile, image)
+    private fun imageFor(profile: CardProfile, rfIdm: String): CardImage {
+        imageCache?.takeIf { it.profile == profile && it.rfIdm == rfIdm }?.let { return it.image }
+        return CardImage(profile, rfIdm, HceSession.SYSTEM_CODE, CardBackupCodec.PMM).also { image ->
+            imageCache = CachedImage(profile, rfIdm, image)
         }
     }
 
@@ -65,5 +69,5 @@ class AimeHostService : HostNfcFService() {
         private const val TAG = "AimeHostService"
     }
 
-    private data class CachedImage(val profile: CardProfile, val image: CardImage)
+    private data class CachedImage(val profile: CardProfile, val rfIdm: String, val image: CardImage)
 }

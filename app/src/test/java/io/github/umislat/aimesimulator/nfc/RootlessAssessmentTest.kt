@@ -30,7 +30,7 @@ class RootlessAssessmentTest {
             RootlessAssessment.Outcome.COMPATIBILITY_ID_REJECTED,
             RootlessAssessment.from(
                 report,
-                routeMode = IdmRouteMode.FIXED_COMPATIBILITY,
+                routeMode = IdmRouteMode.GENERATED_COMPATIBILITY,
                 hasProfile = true
             ).outcome
         )
@@ -57,7 +57,7 @@ class RootlessAssessmentTest {
     @Test fun reportsAnActiveReaderLinkWithoutCallingItAnIdentifierRejection() {
         val assessment = RootlessAssessment.from(
             HceSession.Report(HceSession.Stage.LINK_ACTIVE),
-            routeMode = IdmRouteMode.FIXED_COMPATIBILITY,
+            routeMode = IdmRouteMode.GENERATED_COMPATIBILITY,
             hasProfile = true
         )
 
