@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Binder
 import android.os.Bundle
 import android.os.Process
+import android.provider.Settings
 import io.github.umislat.aimesimulator.BuildConfig
 import java.io.File
 import java.util.concurrent.Executors
@@ -17,8 +18,11 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
     }
     private val packages = context.packageManager
     private val worker = Executors.newSingleThreadExecutor()
-    private val exporter = MiuiNfcExporter(context)
-    private val provisioning = NfcProvisionWorkflow(NfcProvisionBackend(context), ownerUid)
+    private val exporter = AospNfcExporter(context)
+    private val appContext = context
+    private val provisioning = NfcProvisionWorkflow(NfcProvisionBackend(context) {
+        snapshot.state == NfcSnapshotWorkflow.State.CAPTURED
+    }, ownerUid)
     @Volatile private var provision = NfcProvisionWorkflow.Result(NfcProvisionWorkflow.State.IDLE)
     @Volatile private var result = RestoreProbeWorkflow.Result(RestoreProbeWorkflow.State.IDLE)
     @Volatile private var snapshot = NfcSnapshotWorkflow.Result(NfcSnapshotWorkflow.State.IDLE)
@@ -41,7 +45,7 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
         enforceOwner()
         val identity = Binder.clearCallingIdentity()
         return try {
-            val candidate = exporter.candidate()
+            val capabilities = AospBackupCapabilities.inspect(appContext)
             Bundle().apply {
                 putInt("uid", Process.myUid())
                 putBoolean("bu", File("/system/bin/bu").canExecute())
@@ -52,8 +56,10 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
                 putBoolean("identityReadable", Process.myUid() == 2000 && File(
                     "/data/user/0/com.android.nfc/files/dynamic_systemcode_nfcid2.xml"
                 ).canRead())
-                putBoolean("nfcProvisioning", candidate)
-                putBoolean("nfcSnapshotCandidate", candidate)
+                putBundle("aospCapabilities", capabilities.bundle())
+                // Baseline preparation tries a scoped runtime read first; no export receipt is required.
+                putBoolean("nfcProvisioning", capabilities.canExport)
+                putBoolean("nfcSnapshotCandidate", capabilities.canExport)
             }
         } finally { Binder.restoreCallingIdentity(identity) }
     }
@@ -102,6 +108,14 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
 
     override fun snapshotStatus(): Bundle { enforceOwner(); return snapshotBundle(snapshot) }
 
+    @Synchronized override fun inspectNfcRuntime(): Bundle {
+        enforceOwner()
+        check(Process.myUid() == 2000 && !probeUnresolved() && !snapshotUnresolved() && !provisionUnresolved())
+        val identity = Binder.clearCallingIdentity()
+        return try { NfcRuntimeInventory.inspect(appContext).bundle() }
+        finally { Binder.restoreCallingIdentity(identity) }
+    }
+
     override fun readNfcSnapshot(token: String): Bundle {
         enforceOwner()
         check(Process.myUid() == 2000)
@@ -124,7 +138,8 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
     private fun probeUnresolved() = result.busy || result.state in setOf(RestoreProbeWorkflow.State.UNKNOWN,
         RestoreProbeWorkflow.State.NOT_VERIFIED, RestoreProbeWorkflow.State.MARKERS_MATCH)
     private fun snapshotUnresolved() = snapshot.busy || snapshot.state == NfcSnapshotWorkflow.State.UNKNOWN
-    private fun provisionUnresolved() = provision.busy || provision.state == NfcProvisionWorkflow.State.UNKNOWN
+    private fun provisionUnresolved() = provision.busy || provision.state in setOf(
+        NfcProvisionWorkflow.State.UNKNOWN, NfcProvisionWorkflow.State.AWAITING_RELOAD)
 
     @Synchronized override fun prepareNfcProvision(token: String, nfcid2: String): Bundle {
         enforceOwner()
@@ -142,6 +157,7 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
         enforceOwner()
         check(Process.myUid() == 2000)
         val saved = NfcProvisionStore.validate(savedPlan, ownerUid)
+        val checkpoint = NfcProvisionStore.checkpoint(savedPlan, saved)
         val token = savedPlan.getString("token").orEmpty()
         if (token == provision.token) return provisionBundle()
         check(!probeUnresolved() && !snapshotUnresolved() && !provisionUnresolved())
@@ -150,7 +166,14 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
             "A different live plan already exists"
         }
         provision = NfcProvisionWorkflow.Result(NfcProvisionWorkflow.State.CHECKING, token)
-        worker.execute { provision = provisioning.resume(token, saved) { provision = it } }
+        worker.execute {
+            val previousBoot = savedPlan.getInt("boot", -1)
+            val currentBoot = runCatching {
+                Settings.Global.getInt(appContext.contentResolver, Settings.Global.BOOT_COUNT, -1)
+            }.getOrDefault(-1)
+            provision = provisioning.resume(token, saved, checkpoint,
+                previousBoot >= 0 && currentBoot >= 0 && previousBoot != currentBoot) { provision = it }
+        }
         return provisionBundle()
     }
 
@@ -168,6 +191,13 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
             putInt("uid", plan.uid)
             putString("oldSystemCode", plan.before.systemCode)
             putString("oldNfcid2", plan.before.nfcid2)
+            putString("source", plan.source.name)
+            val checkpoint = provisioning.checkpoint()
+            putString("direction", checkpoint.direction.name)
+            checkpoint.rollback?.let {
+                putByteArray("rollbackObservation", it.observationXml())
+                putByteArray("rollbackXml", it.xml())
+            }
         }
     }
 
@@ -177,13 +207,18 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
 
     @Synchronized override fun reloadNfcProvision(token: String): Bundle = provisionAction(token,
         setOf(NfcProvisionWorkflow.State.VERIFIED, NfcProvisionWorkflow.State.ALREADY_PRESENT,
-            NfcProvisionWorkflow.State.ROLLED_BACK, NfcProvisionWorkflow.State.RELOADED),
+            NfcProvisionWorkflow.State.ROLLED_BACK, NfcProvisionWorkflow.State.RELOADED,
+            NfcProvisionWorkflow.State.AWAITING_RELOAD),
         NfcProvisionWorkflow.State.RELOADING) { provisioning.reload(token) { provision = it } }
 
-    @Synchronized override fun rollbackNfcProvision(token: String): Bundle = provisionAction(token,
+    @Synchronized override fun rollbackNfcProvision(token: String, checkpoint: INfcRollbackCheckpoint): Bundle = provisionAction(token,
         setOf(NfcProvisionWorkflow.State.VERIFIED, NfcProvisionWorkflow.State.RELOADED,
             NfcProvisionWorkflow.State.CONFLICT, NfcProvisionWorkflow.State.UNCHANGED),
-        NfcProvisionWorkflow.State.ROLLING_BACK) { provisioning.rollback(token) { provision = it } }
+        NfcProvisionWorkflow.State.ROLLING_BACK) {
+        provisioning.rollback(token, { candidate ->
+            checkpoint.retain(token, candidate.observationXml(), candidate.xml())
+        }) { provision = it }
+    }
 
     private fun provisionAction(token: String, allowed: Set<NfcProvisionWorkflow.State>,
         next: NfcProvisionWorkflow.State, action: () -> NfcProvisionWorkflow.Result): Bundle {
@@ -202,12 +237,14 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
         putString("token", provision.token)
         putString("detail", provision.detail)
         putString("nfcid2", provisioning.requestedIdm)
+        putString("source", provisioning.source.name)
         putBoolean("hasPlan", provisioning.plan != null)
         putBoolean("canActivate", !provision.busy && provisioning.canActivate())
     }
     private fun snapshotBundle(value: NfcSnapshotWorkflow.Result) = Bundle().apply {
         putString("state", value.state.name)
         putString("token", value.token)
+        putString("detail", value.detail)
     }
 
     override fun destroy() {

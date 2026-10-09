@@ -16,9 +16,8 @@ class AimeHostService : HostNfcFService() {
     override fun processNfcFPacket(commandPacket: ByteArray, extras: Bundle?): ByteArray? {
         val request = FelicaCodec.decodeRequest(commandPacket) ?: return null
         val profile = store.selectedProfile() ?: return null
-        val rfIdm = profile.routedIdm(store.idmRouteMode())
-        if (HexCodec.encode(request.nfcid2) != rfIdm) return null
-        val image = imageFor(profile, rfIdm)
+        if (HexCodec.encode(request.nfcid2) != profile.idm) return null
+        val image = imageFor(profile)
 
         val response = when (request.command) {
             FelicaCodec.READ_COMMAND -> {
@@ -54,10 +53,10 @@ class AimeHostService : HostNfcFService() {
     }
 
     @Synchronized
-    private fun imageFor(profile: CardProfile, rfIdm: String): CardImage {
-        imageCache?.takeIf { it.profile == profile && it.rfIdm == rfIdm }?.let { return it.image }
-        return CardImage(profile, rfIdm, HceSession.SYSTEM_CODE, CardBackupCodec.PMM).also { image ->
-            imageCache = CachedImage(profile, rfIdm, image)
+    private fun imageFor(profile: CardProfile): CardImage {
+        imageCache?.takeIf { it.profile == profile }?.let { return it.image }
+        return CardImage(profile, HceSession.SYSTEM_CODE, CardBackupCodec.PMM).also { image ->
+            imageCache = CachedImage(profile, image)
         }
     }
 
@@ -69,5 +68,5 @@ class AimeHostService : HostNfcFService() {
         private const val TAG = "AimeHostService"
     }
 
-    private data class CachedImage(val profile: CardProfile, val rfIdm: String, val image: CardImage)
+    private data class CachedImage(val profile: CardProfile, val image: CardImage)
 }

@@ -36,8 +36,7 @@ class NfcProvisionWorkflowTest {
             if (snapshotUnknown) throw NfcProvisionWorkflow.UncertainOperation()
             return current.copyOf()
         }
-        override fun certificate() = checkNotNull(javaClass.getResourceAsStream("/miui-nfc-signer.hex"))
-            .bufferedReader().use { it.readText().trim().chunked(2).map { pair -> pair.toInt(16).toByte() }.toByteArray() }
+        override fun metadata() = NfcBackupFixtures.metadata()
         override fun restore(archive: ByteArray): ProbeProcess.Result {
             calls += "restore"
             if (!cancelled && !uncertain) {
@@ -239,5 +238,21 @@ class NfcProvisionWorkflowTest {
         assertFalse(resumed.canActivate())
         assertThrows(IllegalArgumentException::class.java) { resumed.resume(token, plan) {} }
         assertEquals(listOf("snapshot"), backend.calls)
+    }
+
+    @Test fun lostFileCompletionIsReadOnlyRecoverableAfterConfirmedReboot() {
+        for (applied in listOf(false, true)) {
+            val backend = Backend()
+            val first = NfcProvisionWorkflow(backend, 10366)
+            first.prepare(token, idm) {}
+            if (applied) first.apply(token) {}
+            backend.calls.clear()
+            val next = NfcProvisionWorkflow(backend, 10366)
+            assertEquals(if (applied) NfcProvisionWorkflow.State.VERIFIED else NfcProvisionWorkflow.State.PREPARED,
+                next.resume(token, first.plan!!, NfcProvisionWorkflow.Checkpoint(NfcProvisionWorkflow.State.CONFIRMING),
+                    bootChanged = true) {}.state)
+            assertEquals(listOf("snapshot"), backend.calls)
+            assertFalse(next.canActivate())
+        }
     }
 }

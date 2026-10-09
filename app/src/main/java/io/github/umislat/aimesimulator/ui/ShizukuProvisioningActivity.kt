@@ -1,6 +1,7 @@
 package io.github.umislat.aimesimulator.ui
 
 import android.os.Bundle
+import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
@@ -19,6 +20,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.umislat.aimesimulator.R
 import io.github.umislat.aimesimulator.provisioning.NfcSnapshotWorkflow
 import io.github.umislat.aimesimulator.provisioning.NfcProvisionWorkflow
+import io.github.umislat.aimesimulator.provisioning.NfcProvisionPlan
 import io.github.umislat.aimesimulator.data.CardStore
 import io.github.umislat.aimesimulator.provisioning.RestoreProbeWorkflow.State
 import io.github.umislat.aimesimulator.provisioning.ShizukuProbeModel
@@ -28,6 +30,8 @@ class ShizukuProvisioningActivity : AppCompatActivity() {
     private lateinit var model: ShizukuProbeModel
     private lateinit var connectionStatus: TextView
     private lateinit var capabilities: TextView
+    private lateinit var deviceCheck: MaterialButton
+    private lateinit var deviceSummary: TextView
     private lateinit var result: TextView
     private lateinit var connect: MaterialButton
     private lateinit var refresh: MaterialButton
@@ -39,6 +43,7 @@ class ShizukuProvisioningActivity : AppCompatActivity() {
     private lateinit var delete: MaterialButton
     private lateinit var provisionStatus: TextView
     private lateinit var preparedIdentity: TextView
+    private lateinit var provisionSource: TextView
     private lateinit var selectedCard: TextView
     private lateinit var activationStatus: TextView
     private lateinit var prepareCard: MaterialButton
@@ -68,10 +73,15 @@ class ShizukuProvisioningActivity : AppCompatActivity() {
         connectionStatus = label(content)
         capabilities = label(diagnostics)
         connect = button(content, R.string.shizuku_connect) { model.connect() }
+        deviceSummary = label(content)
+        deviceCheck = button(content, R.string.device_capabilities) {
+            startActivity(Intent(this, DeviceCapabilitiesActivity::class.java))
+        }.apply { setIconResource(R.drawable.ic_nav_status) }
         refresh = button(diagnostics, R.string.shizuku_refresh) { model.refresh() }
         label(content).setText(R.string.shizuku_nfc_blocked)
         selectedCard = label(content)
         provisionStatus = label(content)
+        provisionSource = label(content)
         preparedIdentity = label(content)
         resumePlan = button(content, R.string.shizuku_card_resume) {
             confirm(R.string.shizuku_card_resume, R.string.shizuku_card_resume_confirm) { model.resumePreviousPlan() }
@@ -143,17 +153,9 @@ class ShizukuProvisioningActivity : AppCompatActivity() {
     }
 
     private fun render(screen: ShizukuProbeModel.Screen) {
-        connectionStatus.setText(when (screen.connection) {
-            Connection.MISSING -> R.string.shizuku_missing
-            Connection.AVAILABLE -> R.string.shizuku_available
-            Connection.PERMISSION -> R.string.shizuku_permission
-            Connection.DENIED -> R.string.shizuku_denied
-            Connection.OLD_VERSION -> R.string.shizuku_old_version
-            Connection.ROOT -> R.string.shizuku_root
-            Connection.CONNECTING -> R.string.shizuku_connecting
-            Connection.READY -> R.string.shizuku_connected
-            Connection.ERROR -> R.string.shizuku_error
-        })
+        connectionStatus.setText(CapabilityText.connection(screen.connection))
+        deviceSummary.setText(CapabilityText.summary(screen))
+        deviceCheck.isEnabled = !screen.busy
         capabilities.text = if (screen.connection == Connection.READY) {
             getString(R.string.shizuku_capabilities, screen.uid, yesNo(screen.bu), yesNo(screen.markerApp),
                 yesNo(screen.identityReadable))
@@ -195,6 +197,7 @@ class ShizukuProvisioningActivity : AppCompatActivity() {
         if (screen.snapshotPending && !screen.snapshot.busy) {
             snapshotStatus.append("\n\n" + getString(R.string.shizuku_snapshot_pending))
         }
+        CapabilityText.failure(screen.snapshot.detail)?.let { snapshotStatus.append("\n" + getString(it)) }
         snapshotSummary.text = screen.savedSnapshot?.let { saved ->
             val recent = saved.recent(Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1),
                 SystemClock.elapsedRealtime(), Build.FINGERPRINT)
@@ -210,9 +213,9 @@ class ShizukuProvisioningActivity : AppCompatActivity() {
         val cards = CardStore(this)
         val profile = cards.selectedProfile()
         val advanced = cards.advancedMode()
-        val matches = profile != null && profile.routedIdm(cards.idmRouteMode()) == screen.provisionIdm
+        val matches = profile != null && profile.idm == screen.provisionIdm
         selectedCard.text = profile?.let { if (advanced) getString(R.string.shizuku_card_selected, it.label,
-            it.routedIdm(cards.idmRouteMode())) else getString(R.string.current_card_summary, it.label) }
+            it.idm) else getString(R.string.current_card_summary, it.label) }
             ?: getString(R.string.shizuku_card_missing)
         provisionStatus.setText(when (screen.provision.state) {
             NfcProvisionWorkflow.State.IDLE -> R.string.shizuku_card_idle
@@ -223,7 +226,9 @@ class ShizukuProvisioningActivity : AppCompatActivity() {
             NfcProvisionWorkflow.State.CHECKING -> R.string.shizuku_card_checking
             NfcProvisionWorkflow.State.CONFIRMING -> R.string.shizuku_confirming
             NfcProvisionWorkflow.State.VERIFYING -> R.string.shizuku_card_verifying
-            NfcProvisionWorkflow.State.VERIFIED -> R.string.shizuku_card_verified
+            NfcProvisionWorkflow.State.VERIFIED -> if (screen.provisionSource == NfcProvisionPlan.BaselineSource.RUNTIME)
+                R.string.shizuku_card_runtime_verified else R.string.shizuku_card_verified
+            NfcProvisionWorkflow.State.AWAITING_RELOAD -> R.string.shizuku_card_awaiting_reload
             NfcProvisionWorkflow.State.UNCHANGED -> R.string.shizuku_card_unchanged
             NfcProvisionWorkflow.State.CONFLICT -> R.string.shizuku_card_conflict
             NfcProvisionWorkflow.State.RELOADING -> R.string.shizuku_card_reloading
@@ -234,9 +239,16 @@ class ShizukuProvisioningActivity : AppCompatActivity() {
             NfcProvisionWorkflow.State.UNKNOWN -> R.string.shizuku_unknown
         })
         if (screen.provisionPending && !screen.provision.busy) provisionStatus.append("\n" + getString(R.string.shizuku_pending))
-        if (screen.connection == Connection.READY && !screen.provisionCandidate) {
-            provisionStatus.setText(R.string.provision_unsupported)
+        if (screen.connection == Connection.READY && !screen.provisionCandidate &&
+            screen.provision.state == NfcProvisionWorkflow.State.IDLE) {
+            provisionStatus.setText(CapabilityText.summary(screen))
         }
+        CapabilityText.failure(screen.provision.detail)?.let { provisionStatus.append("\n" + getString(it)) }
+        if (screen.savedPlanRequiresResume && !screen.planSaved && !screen.provisionPending && !screen.provision.busy)
+            provisionStatus.setText(R.string.shizuku_card_resume_required)
+        provisionSource.setText(if (screen.provisionSource == NfcProvisionPlan.BaselineSource.RUNTIME)
+            R.string.shizuku_card_source_runtime else R.string.shizuku_card_source_file)
+        provisionSource.isVisible = screen.planSaved || screen.canActivate
         preparedIdentity.text = if (screen.provisionIdm.isEmpty()) ""
             else getString(R.string.shizuku_card_plan_identity, screen.provisionIdm)
         preparedIdentity.visibility = if (advanced && screen.provisionIdm.isNotEmpty()) View.VISIBLE else View.GONE
@@ -255,7 +267,8 @@ class ShizukuProvisioningActivity : AppCompatActivity() {
             NfcProvisionWorkflow.State.UNCHANGED)) View.VISIBLE else View.GONE
         reloadNfc.isEnabled = screen.canReload
         reloadNfc.visibility = if (advanced || screen.provision.state in setOf(NfcProvisionWorkflow.State.VERIFIED,
-            NfcProvisionWorkflow.State.ROLLED_BACK)) View.VISIBLE else View.GONE
+            NfcProvisionWorkflow.State.ALREADY_PRESENT, NfcProvisionWorkflow.State.ROLLED_BACK,
+            NfcProvisionWorkflow.State.AWAITING_RELOAD)) View.VISIBLE else View.GONE
         activateCard.isEnabled = screen.canActivate && matches && !screen.busy && !screen.provisionPending
         activateCard.visibility = if (advanced || screen.canActivate) View.VISIBLE else View.GONE
         rollbackCard.isEnabled = screen.canRollback
@@ -267,7 +280,7 @@ class ShizukuProvisioningActivity : AppCompatActivity() {
         if (!screen.canActivate || screen.busy || screen.provisionPending || launchingEmulation) return
         val store = CardStore(this)
         val selected = store.selectedProfile() ?: return
-        if (selected.routedIdm(store.idmRouteMode()) != screen.provisionIdm) {
+        if (selected.idm != screen.provisionIdm) {
             activationStatus.setText(R.string.shizuku_card_selection_changed)
             return
         }
@@ -287,6 +300,7 @@ class ShizukuProvisioningActivity : AppCompatActivity() {
         super.onResume()
         launchingEmulation = false
         model.screen.value?.let(::render)
+        model.refresh()
     }
 
     private fun leave() {

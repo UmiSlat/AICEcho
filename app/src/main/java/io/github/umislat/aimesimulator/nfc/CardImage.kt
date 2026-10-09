@@ -5,14 +5,13 @@ import io.github.umislat.aimesimulator.data.HexCodec
 
 internal class CardImage(
     profile: CardProfile,
-    rfIdm: String = profile.idm,
     systemCode: String = "88B4",
     pmm: String = "00F1000000014300"
 ) {
     private val blocks = HashMap<Int, ByteArray>()
 
     init {
-        val deviceId = requireNotNull(HexCodec.decode(rfIdm, 8))
+        val deviceId = requireNotNull(HexCodec.decode(profile.idm, 8))
         val performance = requireNotNull(HexCodec.decode(pmm, 8))
         val system = requireNotNull(HexCodec.decode(systemCode, 2))
 
@@ -20,7 +19,7 @@ internal class CardImage(
         blocks[0x0E] = ByteArray(16) { 0xFF.toByte() }
         blocks[0x00] = profile.spad0?.let { requireNotNull(HexCodec.decode(it, 16)) }
             ?: ByteArray(16)
-        // Captured identity data is independent of the compatibility RF identifier.
+        // Preserve captured bytes, including issuer data beyond the IDm.
         blocks[0x82] = profile.idBlock?.let { requireNotNull(HexCodec.decode(it, 16)) }
             ?: ByteArray(16).also { requireNotNull(HexCodec.decode(profile.idm, 8)).copyInto(it) }
         blocks[0x83] = deviceId + performance

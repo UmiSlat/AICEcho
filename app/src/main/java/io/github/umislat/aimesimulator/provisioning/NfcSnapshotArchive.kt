@@ -6,11 +6,12 @@ import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayInputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
+import java.io.ByteArrayOutputStream
+import java.util.zip.InflaterInputStream
 
 /** Closed export format, not a general archive importer. No tar path is extracted to disk. */
 internal object NfcSnapshotArchive {
     const val PACKAGE = "com.android.nfc"
-    const val SIGNER = "c9009d01ebf9f5d0302bc71b2fe9aa9a47a432bba17308a3111b75d7b2149025"
     const val MAX_ARCHIVE = 8 * 1024 * 1024
     const val MAX_XML = 128 * 1024
     private const val PREFIX = "apps/$PACKAGE/"
@@ -19,7 +20,8 @@ internal object NfcSnapshotArchive {
         val identityHash: String get() = RestoreProbeArchive.sha256(xml)
     }
 
-    fun parse(raw: ByteArray): Parsed {
+    fun parse(raw: ByteArray, expected: NfcBackupMetadata): Parsed {
+        if (raw.isEmpty()) throw NfcBackupException(NfcBackupException.Reason.EMPTY_BACKUP)
         require(raw.size <= MAX_ARCHIVE)
         val input = ByteArrayInputStream(raw)
         fun line(): String {
@@ -32,27 +34,38 @@ internal object NfcSnapshotArchive {
             }
             return utf8(bytes.toByteArray())
         }
-        require(line() == "MIUI BACKUP" && line() == "2")
-        val label = line()
-        require(label.startsWith("$PACKAGE ") && label.none { it.code < 32 })
-        require(List(6) { line() } == listOf("0", "0", "ANDROID BACKUP", "5", "0", "none"))
-        val payload = input.readBytes()
+        require(line() == "ANDROID BACKUP" && line() == "5")
+        val compression = line().also { require(it == "0" || it == "1") }
+        if (line() != "none") throw NfcBackupException(NfcBackupException.Reason.ENCRYPTED_BACKUP)
+        val payload = if (compression == "0") input.readBytes() else InflaterInputStream(input).use { stream ->
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            while (true) {
+                val count = stream.read(buffer)
+                if (count < 0) break
+                require(out.size() + count <= MAX_ARCHIVE)
+                out.write(buffer, 0, count)
+            }
+            out.toByteArray()
+        }
         require(payload.size % 512 == 0)
         val files = linkedMapOf<String, ByteArray>()
         var end = 0
         TarArchiveInputStream(ByteArrayInputStream(payload), 512, 512, "UTF-8").use { tar ->
             while (true) {
                 val entry = tar.nextEntry ?: break
-                val name = entry.name
+                val name = if (entry.isDirectory) entry.name.removeSuffix("/") else entry.name
                 val parts = name.split('/')
-                require(files.size < 64 && name.startsWith(PREFIX) && name !in files)
+                require(files.size < 1024 && name.startsWith(PREFIX) && name !in files)
                 require(parts.none { it.isEmpty() || it == "." || it == ".." } &&
                     name.none { it == '\\' || it.code < 32 })
-                require(entry.isFile && !entry.isSparse && !entry.isLink && !entry.isSymbolicLink &&
+                require((entry.isFile || entry.isDirectory) && !entry.isSparse && !entry.isLink && !entry.isSymbolicLink &&
                     entry.isCheckSumOK && entry.extraPaxHeaders.isEmpty())
-                require(entry.size in 0..MAX_XML.toLong() && tar.bytesRead == end + 512L)
-                require(name == PREFIX + "_manifest" ||
-                    (parts.size >= 4 && parts[2] in setOf("f", "d_f", "sp", "d_sp")))
+                require(entry.size in 0..MAX_ARCHIVE.toLong() && tar.bytesRead == end + 512L)
+                require(!entry.isDirectory || entry.size == 0L)
+                require(name in setOf(PREFIX + "_manifest", PREFIX + "_meta") ||
+                    (parts.size >= (if (entry.isDirectory) 3 else 4) &&
+                        parts[2] in setOf("r", "f", "db", "sp", "d_r", "d_f", "d_db", "d_sp", "ef")))
                 val bytes = ByteArray(entry.size.toInt())
                 var offset = 0
                 while (offset < bytes.size) {
@@ -66,12 +79,20 @@ internal object NfcSnapshotArchive {
             }
         }
         require(payload.size - end >= 1024 && (end until payload.size).all { payload[it] == 0.toByte() })
-        val manifest = utf8(checkNotNull(files[PREFIX + "_manifest"])).trimEnd('\n').split('\n')
-        require(manifest.size == 8 && manifest.take(7) == listOf("1", PACKAGE, "36", "36", "", "0", "1"))
-        require(manifest[7].matches(Regex("(?:[0-9a-fA-F]{2})+")))
-        val signer = manifest[7].chunked(2).map { it.toInt(16).toByte() }.toByteArray()
-        require(RestoreProbeArchive.sha256(signer) == SIGNER)
-        require(files.keys.filter { it.substringAfterLast('/') == IDENTITY } == listOf(PREFIX + "f/" + IDENTITY))
+        val manifestBytes = files[PREFIX + "_manifest"]
+            ?: throw NfcBackupException(NfcBackupException.Reason.IDENTITY_MISSING)
+        val manifest = utf8(manifestBytes).trimEnd('\n').split('\n')
+        require(manifest.size == 7 + expected.certificates.size &&
+            manifest.take(4) == listOf("1", PACKAGE, expected.version.toString(), expected.sdk.toString()) &&
+            manifest[5] == "0" && manifest[6] == expected.certificates.size.toString())
+        val hashes = manifest.drop(7).map { signer ->
+            require(signer.matches(Regex("(?:[0-9a-fA-F]{2})+")))
+            RestoreProbeArchive.sha256(signer.chunked(2).map { it.toInt(16).toByte() }.toByteArray())
+        }.sorted()
+        require(hashes == expected.signerHashes)
+        val identities = files.keys.filter { it.substringAfterLast('/') == IDENTITY }
+        if (identities.isEmpty()) throw NfcBackupException(NfcBackupException.Reason.IDENTITY_MISSING)
+        require(identities == listOf(PREFIX + "f/" + IDENTITY))
         val xml = checkNotNull(files[PREFIX + "f/" + IDENTITY])
         return Parsed(xml, validateXml(xml), RestoreProbeArchive.sha256(raw))
     }
@@ -86,7 +107,7 @@ internal object NfcSnapshotArchive {
             setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
             setInput(text.reader())
         }
-        val components = hashSetOf<String>()
+        val components = hashSetOf<Pair<Int, String>>()
         var root = false
         var closed = false
         while (true) {
@@ -108,9 +129,9 @@ internal object NfcSnapshotArchive {
                         require(parts.size == 2 && parts[0].matches(Regex("[A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)+")))
                         val cls = if (parts[1].startsWith('.')) parts[0] + parts[1] else parts[1]
                         require(cls.matches(Regex("[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)+")))
-                        require(components.add(parts[0] + "/" + cls))
                         val uid = attrs.getValue("uid")
                         require(uid.matches(Regex("0|[1-9][0-9]{0,9}")) && uid.toLong() <= Int.MAX_VALUE)
+                        require(components.add((uid.toInt() / 100000) to (parts[0] + "/" + cls)))
                         require("system-code" in attrs || "nfcid2" in attrs)
                         for ((key, size) in listOf("system-code" to 4, "nfcid2" to 16)) {
                             attrs[key]?.let { value -> require(value == "NULL" || (key == "nfcid2" && value == "RANDOM") ||

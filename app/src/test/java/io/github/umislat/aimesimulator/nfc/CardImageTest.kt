@@ -1,7 +1,6 @@
 package io.github.umislat.aimesimulator.nfc
 
 import io.github.umislat.aimesimulator.data.CardProfile
-import io.github.umislat.aimesimulator.data.CompatibilityIdm
 import io.github.umislat.aimesimulator.data.HexCodec
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -17,15 +16,14 @@ class CardImageTest {
     ))
 
     @Test fun preservesBothCapturedBlocksWithoutRewritingTheIdentity() {
-        val image = CardImage(profile, CompatibilityIdm.generate(profile.idm))
+        val image = CardImage(profile)
         assertEquals(profile.spad0, HexCodec.encode(requireNotNull(image.read(0x00))))
         assertEquals(profile.idBlock, HexCodec.encode(requireNotNull(image.read(0x82))))
     }
 
-    @Test fun generatesDeviceMetadataFromRfIdentityAndConfiguredPmm() {
-        val rfIdm = CompatibilityIdm.generate(profile.idm)
-        val image = CardImage(profile, rfIdm, pmm = "0102030405060708")
-        assertEquals(rfIdm + "0102030405060708", HexCodec.encode(requireNotNull(image.read(0x83))))
+    @Test fun generatesDeviceMetadataFromOriginalIdentityAndConfiguredPmm() {
+        val image = CardImage(profile, pmm = "0102030405060708")
+        assertEquals(profile.idm + "0102030405060708", HexCodec.encode(requireNotNull(image.read(0x83))))
     }
 
     @Test fun generatesSystemMetadataFromTheSelectedService() {
@@ -33,9 +31,9 @@ class CardImageTest {
             HexCodec.encode(requireNotNull(CardImage(profile, systemCode = "4000").read(0x85))))
     }
 
-    @Test fun missingCaptureUsesOriginalIdentityNotGeneratedRfIdentity() {
+    @Test fun missingCaptureUsesOriginalIdentity() {
         val uncaptured = profile.copy(spad0 = null, idBlock = null)
-        val image = CardImage(uncaptured, CompatibilityIdm.generate(profile.idm))
+        val image = CardImage(uncaptured)
         assertArrayEquals(ByteArray(16), image.read(0x00))
         assertEquals(profile.idm + "0000000000000000",
             HexCodec.encode(requireNotNull(image.read(0x82))))
@@ -63,7 +61,7 @@ class CardImageTest {
     }
 
     @Test fun rejectsMalformedMetadataInsteadOfSilentlyReturningZeros() {
-        assertThrows(IllegalArgumentException::class.java) { CardImage(profile, rfIdm = "00") }
+        assertThrows(IllegalArgumentException::class.java) { CardImage(profile.copy(idm = "00")) }
         assertThrows(IllegalArgumentException::class.java) { CardImage(profile, pmm = "00") }
         assertThrows(IllegalArgumentException::class.java) { CardImage(profile, systemCode = "GGGG") }
     }

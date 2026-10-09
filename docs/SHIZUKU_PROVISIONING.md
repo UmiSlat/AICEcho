@@ -1,5 +1,90 @@
 # Shizuku NFC Experiment Integration
 
+Current source now supports original-IDm emulation only (2026-10-09). Generated
+and suffix compatibility routes and their migration UI have been removed.
+Preparation and activation use the selected card's original IDm; the legal
+4000/02FE registration initializer remains an internal prerequisite when needed.
+This cleanup has not been installed; earlier 02FE device cycles below are history,
+not an alternate-identity feature of the current source.
+
+## AOSP Backend Update (2026-10-09)
+
+Current source replaces `MiuiNfcExporter` with `AospNfcExporter`, using only
+standard `bu backup` and `bu restore`. The backend change used UserService version 6. Device
+capabilities are available outside advanced mode and without a selected card.
+Package version/SDK/public certificates come from the current device, not a
+fixed Xiaomi allowlist. No OEM fallback remains in the application.
+
+The earlier APK and device results below describe the previous backend. They
+are historical evidence, not validation of the new AOSP export. In particular,
+an NFC key/value-only agent normally does not export the identity XML via AOSP.
+An explicit export probe is allowed when standard entry prerequisites pass;
+the file route stays blocked for that agent until complete XML is observed.
+That route takes a fresh full snapshot before writing and after restoring.
+Runtime reconstruction is now a separate local-source route, described below.
+Standard backup may introduce additional system confirmation screens.
+See [current behavior and acceptance checks](AOSP_CAPABILITIES.md).
+
+Device probe on 2026-10-09: `3.0.0-aosp-probe` / code 46 was installed over
+3.0.0 with the same debug signer on Xiaomi 15 Pro, Android 16,
+`OS3.0.308.0.WOBCNXM`. Shizuku shell and BackupManager were available, but the
+NFC agent declared key/value backup. One user-confirmed standard export finished
+without complete identity XML. The full-file baseline route was blocked on this ROM.
+Card preferences, HCE-F registrations and the default wallet were unchanged;
+no restore, explicit NFC reload or RF test followed. This result does not
+establish compatibility or incompatibility of other ROMs.
+
+The next local source iteration used UserService version 7 and added an explicit,
+read-only runtime inventory to the capability page. It tries structured
+`getNfcFServices(0)` first, then a bounded `dumpsys nfc` fallback. When dynamic
+fields can be distinguished, it validates an in-memory XML preview of the
+observed user-0 overrides. This is not a complete disk snapshot, does not alter
+provisioning eligibility and cannot submit a restore. The installed code-46 APK
+lacks this entry and the subsequent implementation below.
+
+Current local source uses UserService version 8. Card preparation separately checks
+the full user list, installed service candidates, dynamic-field availability and
+two stable structured reads. Runtime reconstruction currently supports Android
+14+ and a single unlocked foreground owner user only; other profiles/users and
+incomplete caches block it. A full-file export remains a fallback on eligible
+devices. Text dumps are inspection-only, never a minimal-table write fallback.
+
+Plans retain FILE or RUNTIME provenance. FILE comparisons remain byte-exact;
+RUNTIME comparisons use canonical user/component records while retaining missing
+attributes versus NULL. A normal runtime restore completion becomes
+AWAITING_RELOAD, not VERIFIED. Explicit reload obtains fresh interfaces and checks
+the reconstructed table before permitting activation. Cancellation is detected
+only at that readback; no automatic restore, reload or retry is added.
+
+Plan-store version 2 retains phase, direction and the actual merged rollback
+candidate. A fixed rollback callback must retain the actual candidate in app
+storage before restore submission; a failed acknowledgement prevents submission.
+Intent is saved before write/reload IPC and settled checkpoints before clearing
+the pending journal. A fresh session blocks new preparation until unresolved
+saved progress is resumed. Reopening AWAITING_RELOAD cannot become PREPARED merely
+because the old cache is visible. Lost completions remain UNKNOWN in the same or
+an unknown boot; a service-verified new boot permits explicit read-only resolution,
+never automatic replay. Legacy version-1 plans remain FILE plans. These source
+changes initially received local validation only. Code 47 was subsequently built
+and installed over code 46 with the same debug signer. Its explicit runtime
+inspection read two user-0 services, including separate dynamic fields, and
+validated the in-memory XML preview. Shell `pm list users` also confirmed a
+running XSpace user 999, outside the current single-user reconstruction scope.
+No prepare, backup, restore, NFC reload or RF test followed. Card preferences,
+existing NFC registrations and the default wallet were unchanged. See
+[the package and read-only result](AOSP_CAPABILITIES.md) for evidence boundaries.
+
+The user subsequently removed the app clone, and a fresh user listing contained
+only user 0. With the same code-47 APK and a shell-started Shizuku service,
+explicit card preparation passed the full runtime baseline checks and returned
+RUNTIME / ALREADY_PRESENT. The selected identity was already registered, so no
+new restore plan or write was needed. Card preferences, the previous saved plan,
+NFC registrations and the default wallet were unchanged; only the settled
+preparation journal changed. No backup, restore, registration, NFC reload,
+emulation activation or RF test was performed. This validates baseline capture
+and preparation on this device, not a new-identity restore cycle or multi-user
+support.
+
 ## Scope
 
 The requested end state is Aime emulation without Root, or with reduced
@@ -10,7 +95,7 @@ Version 3.0 exposes **Set up card** on the ordinary card/status pages. It connec
 to a restricted UserService, checks shell execution and the installed owned
 marker app, submits an Android-confirmed restore entirely on the phone, and
 compares both restored marker files byte for byte. Current source also includes
-fixed-ROM NFC snapshot export and separately confirmed current-card provisioning,
+AOSP NFC snapshot export and separately confirmed current-card provisioning,
 read-back and NFC reload. It reuses `PersistedHceRouteWorkflow` for activation and
 does not change default-wallet settings. On 2026-10-09, build 2.2.23 completed an
 original-IDm -> prefix-02FE -> original-IDm device/RF cycle, with an app-process
@@ -19,7 +104,7 @@ reconnection remain unverified; see the current device result below. The origina
 Lab and snapshot controls are now inside collapsed advanced diagnostics, not the
 daily workflow.
 
-## Current 3.0 Acceptance Build
+## Earlier 3.0 Acceptance Build (Before the AOSP Backend Update)
 
 The source is version 3.0.0 (45). Fresh installs default to saved-identity/Shizuku
 mode; existing installations retain their method and profiles. MainActivity in
@@ -150,6 +235,10 @@ tests should exit to the Android home screen when preserving the NFC baseline.
 
 ## Device Result, 2026-10-08
 
+The dated sections below preserve the implementation and results at those older
+versions. References to pinned ROMs, Xiaomi export, or unfinished steps are
+historical; the AOSP backend update at the top describes current source.
+
 On Xiaomi 15 Pro / Android 16, the user authorized updating the existing debug
 installation with the same signer (no uninstall or card migration was performed
 by this experiment). Local build `2.2.20-shizuku-probe`, versionCode 40, passed
@@ -209,7 +298,7 @@ It still has no NFC provisioning endpoint.
 See [the Xiaomi snapshot audit](../tools/hcef-lab/MIUI_SNAPSHOT.md) for scope,
 actual-ROM evidence, source hashes and the restricted probe.
 
-## In-App Snapshot Implementation
+## Historical In-App Snapshot Implementation (2.2.21)
 
 The exporter pins shell UID 2000, Android 36, OS3.0.308.0.WOBCNXM and the NFC
 package's version, system UID, flags, backup agent, public signer and APK hash.
@@ -366,7 +455,7 @@ full suite now passes 317 cases with no skips; lint remains 0 errors/13 warnings
 No new APK or phone operation followed. An uncertain transport result remains
 unknown at the workflow layer, not cancelled, safe to retry, or permission to reload.
 
-## Current Functional Prototype: 2.2.23
+## Historical Functional Prototype: 2.2.23
 
 The user redirected development to completing functionality before extended
 safety testing. The source now exposes a manual current-card provisioning flow,
@@ -376,7 +465,7 @@ The ROM-specific preflight and basic XML/owner checks remain in place, without
 waiting for a nonexistent restore-wide lock before implementing the prototype.
 
 1. **Prepare current card:** read a fresh complete identity table, select only
-   this app's AimeHostService record and the current card's configured routed IDm,
+   this app's AimeHostService record and the current card's original IDm,
    and prepare SC 88B4. An already identical record skips restore. A missing or
    placeholder record offers explicit legal 4000/02FE initialization first.
 2. **Write prepared identity:** save original/proposed bytes and hashes under

@@ -16,7 +16,6 @@ import androidx.appcompat.app.AlertDialog
 import io.github.umislat.aimesimulator.R
 import io.github.umislat.aimesimulator.data.CardProfile
 import io.github.umislat.aimesimulator.data.CardStore
-import io.github.umislat.aimesimulator.data.IdmRouteMode
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -164,6 +163,35 @@ class ShizukuProvisioningActivityTest {
         } finally { controller.pause().stop().destroy() }
     }
 
+    @Test fun runtimeWaitingStateOffersReloadWithoutNewPreparationOrEmulation() {
+        val controller = Robolectric.buildActivity(ShizukuProvisioningActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val card = requireNotNull(CardProfile.create("Synthetic", "012E112233445566"))
+            CardStore(activity).apply { put(card); select(card.profileId) }
+            val model = ViewModelProvider(activity)[ShizukuProbeModel::class.java]
+            val state = ShizukuProbeModel.Screen(connection = ShizukuProbeModel.Connection.READY, uid = 2000,
+                bu = true, snapshotCandidate = false, provisionCandidate = true, planSaved = true,
+                provisionSource = io.github.umislat.aimesimulator.provisioning.NfcProvisionPlan.BaselineSource.RUNTIME,
+                provisionIdm = card.idm,
+                provision = NfcProvisionWorkflow.Result(NfcProvisionWorkflow.State.AWAITING_RELOAD, "a".repeat(32)))
+            (model.screen as MutableLiveData).value = state
+            val all = views(activity.findViewById(android.R.id.content)).toList()
+            val buttons = all.filterIsInstance<MaterialButton>()
+            val reload = buttons.single { it.text == activity.getString(R.string.shizuku_card_reload) }
+            assertTrue(reload.isEnabled)
+            assertEquals(View.VISIBLE, reload.visibility)
+            for (id in listOf(R.string.shizuku_card_prepare, R.string.shizuku_card_apply,
+                R.string.shizuku_card_activate, R.string.shizuku_card_rollback, R.string.shizuku_snapshot_capture)) {
+                assertFalse(buttons.single { it.text == activity.getString(id) }.isEnabled)
+            }
+            assertTrue(all.filterIsInstance<TextView>().any { it.text == activity.getString(R.string.shizuku_card_awaiting_reload) })
+            assertTrue(all.filterIsInstance<TextView>().any { it.text == activity.getString(R.string.shizuku_card_source_runtime) })
+            model.screen.value = state.copy(planSaved = false)
+            assertFalse(reload.isEnabled)
+        } finally { controller.pause().stop().destroy() }
+    }
+
     @Test fun activationLaunchesPrivateSessionWithoutLosingPreparedPlan() {
         val controller = Robolectric.buildActivity(ShizukuProvisioningActivity::class.java).setup()
         try {
@@ -197,16 +225,16 @@ class ShizukuProvisioningActivityTest {
         } finally { controller.pause().stop().destroy() }
     }
 
-    @Test fun changedRouteCannotLaunchTheOldPreparedIdentity() {
+    @Test fun oldCompatibilityPlanCannotLaunchInsteadOfOriginalIdentity() {
         val controller = Robolectric.buildActivity(ShizukuProvisioningActivity::class.java).setup()
         try {
             val activity = controller.get()
             val card = requireNotNull(CardProfile.create("Synthetic", "012E112233445566"))
             val cards = CardStore(activity).apply {
-                put(card); select(card.profileId); setIdmRouteMode(IdmRouteMode.PREFIX_COMPATIBILITY)
+                put(card); select(card.profileId)
             }
             val model = ViewModelProvider(activity)[ShizukuProbeModel::class.java]
-            (model.screen as MutableLiveData).value = ShizukuProbeModel.Screen(canActivate = true, provisionIdm = card.idm)
+            (model.screen as MutableLiveData).value = ShizukuProbeModel.Screen(canActivate = true, provisionIdm = "02FE112233445566")
             views(activity.findViewById(android.R.id.content)).filterIsInstance<MaterialButton>()
                 .single { it.text == activity.getString(R.string.shizuku_card_activate) }.performClick()
             assertNull(shadowOf(activity).nextStartedActivity)
@@ -259,6 +287,8 @@ class ShizukuProvisioningActivityTest {
             assertFalse(visible.contains(activity.getString(R.string.shizuku_snapshot_capture)))
             assertFalse(visible.contains(activity.getString(R.string.shizuku_card_apply)))
             assertTrue(visible.contains(activity.getString(R.string.shizuku_card_activate)))
+            assertTrue(visible.contains(activity.getString(R.string.shizuku_card_reload)))
+            assertTrue(visible.contains(activity.getString(R.string.device_capabilities)))
         } finally { controller.pause().stop().destroy() }
     }
 

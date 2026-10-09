@@ -14,6 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.zip.DeflaterOutputStream
 
 @RunWith(BundledArchiveTestRunner::class)
 @Config(sdk = [29, 36], application = Application::class)
@@ -23,13 +24,14 @@ class NfcSnapshotTest {
     private val xml = """<?xml version="1.0" encoding="utf-8"?><services><service component="example.lab/.Host" uid="10001" system-code="4000" nfcid2="02FE6C6162323031"/></services>""".toByteArray()
     private val prefix = "apps/com.android.nfc/"
     private val identity = prefix + "f/dynamic_systemcode_nfcid2.xml"
+    private val metadata get() = NfcBackupFixtures.metadata()
     private val signer get() = checkNotNull(javaClass.getResourceAsStream("/miui-nfc-signer.hex"))
         .bufferedReader().use { it.readText().trim() }
     private fun manifest(certificate: String = signer) = "1\ncom.android.nfc\n36\n36\n\n0\n1\n$certificate\n".toByteArray()
     private fun archive(entries: List<Pair<String, ByteArray>> = listOf(prefix + "_manifest" to manifest(), identity to xml),
         amend: (TarArchiveEntry) -> Unit = {}): ByteArray {
         val out = ByteArrayOutputStream()
-        out.write("MIUI BACKUP\n2\ncom.android.nfc NFC\n0\n0\nANDROID BACKUP\n5\n0\nnone\n".toByteArray())
+        out.write("ANDROID BACKUP\n5\n0\nnone\n".toByteArray())
         TarArchiveOutputStream(out, 512).use { tar ->
             for ((name, bytes) in entries) {
                 val entry = TarArchiveEntry(name).apply { size = bytes.size.toLong(); amend(this) }
@@ -41,7 +43,7 @@ class NfcSnapshotTest {
         }
         return out.toByteArray()
     }
-    private fun rejects(raw: ByteArray) { assertThrows(Exception::class.java) { NfcSnapshotArchive.parse(raw) } }
+    private fun rejects(raw: ByteArray) { assertThrows(Exception::class.java) { NfcSnapshotArchive.parse(raw, metadata) } }
 
     @Test fun testsUseThePublishedParserNotAndroidAllsOlderCopy() {
         assertEquals("1.28.0", org.apache.commons.compress.archivers.tar.TarArchiveInputStream::class.java.`package`?.implementationVersion)
@@ -49,7 +51,7 @@ class NfcSnapshotTest {
 
     @Test fun preservesCompleteXmlBytesAndValidatesSigner() {
         val raw = archive()
-        val parsed = NfcSnapshotArchive.parse(raw)
+        val parsed = NfcSnapshotArchive.parse(raw, metadata)
         assertArrayEquals(xml, parsed.xml)
         assertEquals(1, parsed.records)
         assertEquals(RestoreProbeArchive.sha256(raw), parsed.archiveHash)
@@ -70,7 +72,7 @@ class NfcSnapshotTest {
 
     @Test fun rejectsForeignPackagesTraversalAndUnreviewedDomains() {
         for (name in listOf("apps/example.other/f/test", prefix + "f/../other", prefix + "f//other",
-            prefix + "f/./other", prefix + "db/data")) {
+            prefix + "f/./other", prefix + "unknown/data")) {
             rejects(archive(listOf(prefix + "_manifest" to manifest(), identity to xml, name to byteArrayOf(1))))
         }
     }
@@ -93,7 +95,7 @@ class NfcSnapshotTest {
 
     @Test fun rejectsLinksEvenWhenTheyPointAtIdentity() {
         val out = ByteArrayOutputStream()
-        out.write("MIUI BACKUP\n2\ncom.android.nfc NFC\n0\n0\nANDROID BACKUP\n5\n0\nnone\n".toByteArray())
+        out.write("ANDROID BACKUP\n5\n0\nnone\n".toByteArray())
         TarArchiveOutputStream(out, 512).use { tar ->
             val entry = TarArchiveEntry(identity, '2'.code.toByte()).apply { linkName = "/data/example" }
             tar.putArchiveEntry(entry); tar.closeArchiveEntry(); tar.finish()
@@ -101,10 +103,10 @@ class NfcSnapshotTest {
         rejects(out.toByteArray())
     }
 
-    @Test fun rejectsCompressedOrEncryptedAndWrongPackageHeaders() {
+    @Test fun rejectsInvalidCompressionEncryptionAndWrongPackageManifest() {
         val raw = archive()
         for ((from, to) in listOf("BACKUP\n5\n0\nnone" to "BACKUP\n5\n1\nnone",
-            "\nnone\n" to "\naes!\n", "com.android.nfc NFC" to "com.android.foo NFC")) {
+            "\nnone\n" to "\naes!\n", "apps/com.android.nfc" to "apps/com.android.foo")) {
             val header = raw.takeWhile { it != 0.toByte() }.toByteArray().toString(Charsets.UTF_8)
             val changed = header.replace(from, to).toByteArray()
             assertEquals(header.toByteArray().size, changed.size)
@@ -138,7 +140,10 @@ class NfcSnapshotTest {
         val path = System.getenv("AIMESIM_PRIVATE_NFC_EXPORT")
         assumeTrue(!path.isNullOrBlank())
         val source = File(checkNotNull(path))
-        val parsed = NfcSnapshotArchive.parse(source.readBytes())
+        // The old private evidence has a five-line OEM envelope. Production accepts only AOSP.
+        val input = source.readBytes().inputStream()
+        repeat(5) { while (true) { val byte = input.read(); check(byte >= 0); if (byte == 10) break } }
+        val parsed = NfcSnapshotArchive.parse(input.readBytes(), metadata)
         assertTrue(parsed.xml.contentEquals(File(source.parentFile, "snapshot/identity.xml").readBytes()))
         assertEquals(2, parsed.records)
     }
@@ -159,7 +164,9 @@ class NfcSnapshotTest {
         assertEquals(NfcSnapshotWorkflow.State.FAILED, NfcSnapshotWorkflow(before).run(token) {}.state)
         assertEquals(0, before.exports)
         val interrupted = FakeBackend().apply { exportFailure = true }
-        assertEquals(NfcSnapshotWorkflow.State.UNKNOWN, NfcSnapshotWorkflow(interrupted).run(token) {}.state)
+        val result = NfcSnapshotWorkflow(interrupted).run(token) {}
+        assertEquals(NfcSnapshotWorkflow.State.UNKNOWN, result.state)
+        assertEquals("", result.detail)
         assertEquals(1, interrupted.exports)
     }
 
@@ -182,11 +189,41 @@ class NfcSnapshotTest {
         var exportFailure = false
         var stampFailure = false
         override fun preflight() { check(!preflightFailure) }
+        override fun metadata() = this@NfcSnapshotTest.metadata
         override fun export(): ByteArray { exports++; check(!exportFailure); return bytes }
         override fun stamp(parsed: NfcSnapshotArchive.Parsed): NfcSnapshotWorkflow.Capture {
             check(!stampFailure)
             return NfcSnapshotWorkflow.Capture(parsed, 4, 100, 1000, "build")
         }
+    }
+
+    @Test fun standardCompressedArchiveAndExtraFullBackupFilesAreSupported() {
+        val standard = archive(listOf(prefix + "_manifest" to manifest(), prefix + "f/" to byteArrayOf(), identity to xml,
+            prefix + "db/nfc.db" to byteArrayOf(1, 2), prefix + "sp/preferences.xml" to "<map/>".toByteArray()))
+        val header = "ANDROID BACKUP\n5\n0\nnone\n".toByteArray()
+        val compressed = ByteArrayOutputStream().apply {
+            write("ANDROID BACKUP\n5\n1\nnone\n".toByteArray())
+            DeflaterOutputStream(this).use { it.write(standard, header.size, standard.size - header.size) }
+        }.toByteArray()
+        assertArrayEquals(xml, NfcSnapshotArchive.parse(compressed, metadata).xml)
+    }
+
+    @Test fun missingIdentityAndCancelledExportHaveActionableResults() {
+        for ((bytes, reason) in listOf(byteArrayOf() to "EMPTY_BACKUP",
+            archive(listOf(prefix + "_manifest" to manifest())) to "IDENTITY_MISSING")) {
+            val backend = FakeBackend().apply { this.bytes = bytes }
+            val result = NfcSnapshotWorkflow(backend).run(token) {}
+            assertEquals(NfcSnapshotWorkflow.State.REJECTED, result.state)
+            assertEquals(reason, result.detail)
+            assertTrue(result.settled)
+        }
+    }
+
+    @Test fun mismatchedDeviceMetadataAndOemEnvelopeAreRejected() {
+        assertThrows(Exception::class.java) { NfcSnapshotArchive.parse(archive(), NfcBackupFixtures.metadata(version = 123)) }
+        assertThrows(Exception::class.java) { NfcSnapshotArchive.parse(archive(), NfcBackupFixtures.metadata(sdk = 35)) }
+        assertThrows(Exception::class.java) { NfcSnapshotArchive.parse(archive(), NfcBackupFixtures.metadata(fixture = "restore-probe-signer.hex")) }
+        rejects("MIUI BACKUP\n2\ncom.android.nfc NFC\n0\n0\n".toByteArray() + archive())
     }
 
     private fun data() = Bundle().apply {

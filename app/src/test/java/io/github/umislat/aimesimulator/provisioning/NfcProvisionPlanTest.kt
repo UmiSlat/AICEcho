@@ -11,6 +11,7 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Base64
 import java.util.zip.InflaterInputStream
@@ -27,8 +28,9 @@ class NfcProvisionPlanTest {
           <service component="example.wallet/.Host" uid="10500" system-code="4001" nfcid2="02FE111111111111"/>
         </services>
     """.trimIndent().toByteArray()
-    private fun plan(raw: ByteArray = source) = NfcProvisionPlan.prepare(raw, RestoreProbeArchive.sha256(raw),
-        target, 10366, oldId, newId)
+    private fun plan(raw: ByteArray = source,
+        baselineSource: NfcProvisionPlan.BaselineSource = NfcProvisionPlan.BaselineSource.FILE) =
+        NfcProvisionPlan.prepare(raw, RestoreProbeArchive.sha256(raw), target, 10366, oldId, newId, baselineSource)
     private fun records(xml: ByteArray): List<Map<String, String>> {
         val parser = Xml.newPullParser().apply { setInput(ByteArrayInputStream(xml), "UTF-8") }
         val records = mutableListOf<Map<String, String>>()
@@ -42,6 +44,31 @@ class NfcProvisionPlanTest {
     private fun edited(bytes: ByteArray, from: String, to: String) = bytes.toString(Charsets.UTF_8)
         .replace(from, to).toByteArray()
 
+    private fun reformatted(xml: ByteArray): ByteArray {
+        val output = ByteArrayOutputStream()
+        Xml.newSerializer().apply {
+            setOutput(output, "UTF-8")
+            startTag(null, "services")
+            for (record in records(xml).reversed()) {
+                text("\n  ")
+                startTag(null, "service")
+                for ((key, value) in record.entries.reversed()) {
+                    val normalized = when {
+                        key == "component" -> value.replace("/.", "/${value.substringBefore('/')}.")
+                        key in setOf("system-code", "nfcid2") && value !in setOf("NULL", "RANDOM") -> value.lowercase()
+                        else -> value
+                    }
+                    attribute(null, key, normalized)
+                }
+                endTag(null, "service")
+            }
+            text("\n")
+            endTag(null, "services")
+            flush()
+        }
+        return output.toByteArray()
+    }
+
     @Test fun forwardChangesOnlyTargetIdentityAndKeepsAttributesAndOrder() {
         val plan = plan()
         val before = records(source)
@@ -54,9 +81,11 @@ class NfcProvisionPlanTest {
 
     @Test fun forwardRequiresExactReviewedPreimageEvenForFormattingChanges() {
         val plan = plan()
+        assertEquals(NfcProvisionPlan.BaselineSource.FILE, plan.source)
         assertEquals(NfcProvisionPlan.ForwardCheck.BASELINE_MATCH, plan.checkForward(source))
         assertEquals(NfcProvisionPlan.ForwardCheck.PROPOSED_PRESENT, plan.checkForward(plan.proposedXml()))
-        for (changed in listOf(edited(source, "4001", "4002"), source + "\n".toByteArray(), byteArrayOf())) {
+        for (changed in listOf(edited(source, "4001", "4002"), source + "\n".toByteArray(),
+            reformatted(source), byteArrayOf())) {
             assertEquals(NfcProvisionPlan.ForwardCheck.CONFLICT, plan.checkForward(changed))
         }
     }
@@ -67,6 +96,10 @@ class NfcProvisionPlanTest {
         assertEquals(NfcProvisionPlan.RollbackCheck.CANDIDATE, rollback.check)
         assertArrayEquals(source, checkNotNull(rollback.candidate).xml())
         assertTrue(rollback.candidate.matchesObservation(plan.proposedXml()))
+        assertArrayEquals(plan.proposedXml(), rollback.candidate.observationXml())
+        assertTrue(rollback.candidate.matchesReplacement(source))
+        assertFalse(rollback.candidate.matchesReplacement(reformatted(source)))
+        assertFalse(rollback.candidate.matchesObservation(reformatted(plan.proposedXml())))
     }
 
     @Test fun rollbackPreservesAnotherServicesLaterChanges() {
@@ -137,8 +170,181 @@ class NfcProvisionPlanTest {
         val candidate = checkNotNull(plan.rollbackAgainst(observed).candidate)
         observed.fill(0)
         candidate.xml().fill(0)
+        candidate.observationXml().fill(0)
         assertArrayEquals(source, candidate.xml())
+        assertArrayEquals(plan.proposedXml(), candidate.observationXml())
         assertTrue(candidate.matchesObservation(plan.proposedXml()))
+    }
+
+    @Test fun runtimeComparisonIgnoresRecordAttributeOrderFormattingComponentSpellingAndHexCase() {
+        val plan = plan(baselineSource = NfcProvisionPlan.BaselineSource.RUNTIME)
+        val baseline = reformatted(source)
+        val proposed = reformatted(plan.proposedXml())
+        assertEquals(NfcProvisionPlan.BaselineSource.RUNTIME, plan.source)
+        assertFalse(source.contentEquals(baseline))
+        assertFalse(plan.proposedXml().contentEquals(proposed))
+        assertTrue(plan.matchesOriginal(baseline))
+        assertTrue(plan.matchesProposed(proposed))
+        assertEquals(NfcProvisionPlan.ForwardCheck.BASELINE_MATCH, plan.checkForward(baseline))
+        assertEquals(NfcProvisionPlan.ForwardCheck.PROPOSED_PRESENT, plan.checkForward(proposed))
+        assertEquals(RestoreProbeArchive.sha256(source), plan.originalHash)
+        assertEquals(RestoreProbeArchive.sha256(plan.proposedXml()), plan.proposedHash)
+        for (invalid in listOf(byteArrayOf(), "<services>".toByteArray())) {
+            assertFalse(plan.matchesOriginal(invalid))
+            assertFalse(plan.matchesProposed(invalid))
+            assertEquals(NfcProvisionPlan.ForwardCheck.CONFLICT, plan.checkForward(invalid))
+        }
+    }
+
+    @Test fun runtimeComparisonPreservesMissingAttributesVersusNullAndOtherAllowedValues() {
+        for ((attribute, removed) in listOf("system-code" to " system-code=\"4001\"",
+            "nfcid2" to " nfcid2=\"02FE111111111111\"")) {
+            val baseline = edited(source, removed, "")
+            val runtimePlan = plan(baseline, NfcProvisionPlan.BaselineSource.RUNTIME)
+            val nullValue = edited(baseline, "uid=\"10500\"", "uid=\"10500\" $attribute=\"NULL\"")
+            assertTrue(runtimePlan.matchesOriginal(reformatted(baseline)))
+            assertFalse(runtimePlan.matchesOriginal(nullValue))
+            assertEquals(NfcProvisionPlan.ForwardCheck.CONFLICT, runtimePlan.checkForward(nullValue))
+            val nullPlan = plan(nullValue, NfcProvisionPlan.BaselineSource.RUNTIME)
+            assertTrue(nullPlan.matchesOriginal(reformatted(nullValue)))
+            assertFalse(nullPlan.matchesOriginal(baseline))
+        }
+        val plan = plan(baselineSource = NfcProvisionPlan.BaselineSource.RUNTIME)
+        for (changed in listOf(edited(source, "10500", "10501"),
+            edited(source, "4001", "NULL"), edited(source, "02FE111111111111", "RANDOM"),
+            edited(source, "a &amp; b", "A &amp; b"),
+            edited(source, "uid=\"10500\"", "uid=\"10500\" description=\"\""))) {
+            assertEquals(NfcProvisionPlan.ForwardCheck.CONFLICT, plan.checkForward(changed))
+        }
+    }
+
+    @Test fun runtimeRollbackMatchesSemanticTargetAndWholeReplacement() {
+        val plan = plan(baselineSource = NfcProvisionPlan.BaselineSource.RUNTIME)
+        val current = reformatted(plan.proposedXml())
+        val rollback = plan.rollbackAgainst(current)
+        assertEquals(NfcProvisionPlan.RollbackCheck.CANDIDATE, rollback.check)
+        val candidate = checkNotNull(rollback.candidate)
+        assertEquals(NfcProvisionPlan.BaselineSource.RUNTIME, candidate.source)
+        assertArrayEquals(current, candidate.observationXml())
+        assertTrue(candidate.matchesReplacement(source))
+        assertEquals(records(current).single { it["uid"] == "10500" },
+            records(candidate.xml()).single { it["uid"] == "10500" })
+        assertTrue(candidate.matchesObservation(plan.proposedXml()))
+        assertTrue(candidate.matchesReplacement(reformatted(source)))
+        assertFalse(candidate.matchesReplacement(edited(source, "4001", "4002")))
+        assertFalse(candidate.matchesReplacement(edited(source, "10500", "10501")))
+        assertFalse(candidate.matchesReplacement(plan.proposedXml()))
+        assertFalse(candidate.matchesReplacement(byteArrayOf()))
+        candidate.observationXml().fill(0)
+        candidate.xml().fill(0)
+        current.fill(0)
+        assertTrue(candidate.matchesObservation(plan.proposedXml()))
+        assertTrue(candidate.matchesReplacement(source))
+    }
+
+    @Test fun runtimeRollbackPreservesOtherRecordsLatestChangesAndMissingAttributes() {
+        val plan = plan(baselineSource = NfcProvisionPlan.BaselineSource.RUNTIME)
+        val current = reformatted(edited(edited(plan.proposedXml(), "4001", "NULL"),
+            " nfcid2=\"02FE111111111111\"", ""))
+        assertEquals(NfcProvisionPlan.ForwardCheck.CONFLICT, plan.checkForward(current))
+        val candidate = checkNotNull(plan.rollbackAgainst(current).candidate)
+        val wallet = records(current).single { it.getValue("uid") == "10500" }
+        assertEquals(wallet, records(candidate.xml()).single { it.getValue("uid") == "10500" })
+        assertEquals(records(source)[0], records(candidate.xml()).single { it.getValue("uid") == "10366" })
+        assertTrue(candidate.matchesObservation(reformatted(current)))
+        assertTrue(candidate.matchesReplacement(reformatted(candidate.xml())))
+        assertFalse(candidate.matchesReplacement(source))
+        assertFalse(candidate.matchesObservation(plan.proposedXml()))
+        assertFalse(candidate.matchesReplacement(edited(candidate.xml(), "uid=\"10500\"",
+            "uid=\"10500\" nfcid2=\"NULL\"")))
+        val restoredCandidate = checkNotNull(plan.rollbackAgainst(candidate.observationXml()).candidate)
+        assertEquals(NfcProvisionPlan.BaselineSource.RUNTIME, restoredCandidate.source)
+        assertTrue(restoredCandidate.matchesReplacement(candidate.xml()))
+        assertArrayEquals(candidate.xml(), restoredCandidate.xml())
+    }
+
+    @Test fun runtimeRollbackKeepsServiceAdditionAndDeletion() {
+        val plan = plan(baselineSource = NfcProvisionPlan.BaselineSource.RUNTIME)
+        val third = """<service component="example.other/.Host" uid="99910500" nfcid2="RANDOM"/>"""
+        val added = reformatted(edited(plan.proposedXml(), "</services>", "$third</services>"))
+        val candidate = checkNotNull(plan.rollbackAgainst(added).candidate)
+        val others = { xml: ByteArray -> records(xml).filter { it["uid"] != "10366" } }
+        assertEquals(others(added), others(candidate.xml()))
+        val targetOnly = "<services><service component=\"${target.component}\" uid=\"10366\" " +
+            "system-code=\"88b4\" nfcid2=\"${newId.nfcid2.lowercase()}\" description=\"a &amp; b &quot;x&quot;\"/></services>"
+        val removed = checkNotNull(plan.rollbackAgainst(targetOnly.toByteArray()).candidate)
+        assertEquals(listOf(records(source)[0]), records(removed.xml()))
+    }
+
+    @Test fun runtimeRollbackStillRejectsTargetUidIdentityMissingNullAndDescriptionChanges() {
+        val plan = plan(baselineSource = NfcProvisionPlan.BaselineSource.RUNTIME)
+        for (current in listOf(edited(plan.proposedXml(), "10366", "10367"),
+            edited(plan.proposedXml(), "10366", "110366"),
+            edited(plan.proposedXml(), newId.nfcid2, "012E999999999999"),
+            edited(plan.proposedXml(), " system-code=\"88B4\"", ""),
+            edited(plan.proposedXml(), "88B4", "NULL"),
+            edited(plan.proposedXml(), "a &amp; b", "A &amp; b"))) {
+            val rollback = plan.rollbackAgainst(reformatted(current))
+            assertEquals(NfcProvisionPlan.RollbackCheck.TARGET_CONFLICT, rollback.check)
+            assertNull(rollback.candidate)
+        }
+        val reverted = plan.rollbackAgainst(reformatted(edited(source, "4001", "4002")))
+        assertEquals(NfcProvisionPlan.RollbackCheck.ALREADY_REVERTED, reverted.check)
+        assertNull(reverted.candidate)
+    }
+
+    @Test fun sameComponentInAnotherUserIsPreservedAndCurrentIdentityRequiresExactUid() {
+        val extra = """<service component="${target.component}" uid="99910366" system-code="4002" nfcid2="02FE222222222222"/>"""
+        val baseline = edited(source, "</services>", "$extra</services>")
+        for (baselineSource in NfcProvisionPlan.BaselineSource.entries) {
+            val plan = plan(baseline, baselineSource)
+            assertEquals(2, plan.preservedRecords)
+            assertTrue(plan.matchesOriginal(baseline))
+            val profile = records(baseline).single { it["uid"] == "99910366" }
+            assertEquals(profile, records(plan.proposedXml()).single { it["uid"] == "99910366" })
+            val current = edited(plan.proposedXml(), "4002", "4003")
+            val candidate = checkNotNull(plan.rollbackAgainst(current).candidate)
+            assertEquals("4003", records(candidate.xml()).single { it["uid"] == "99910366" }["system-code"])
+            assertTrue(candidate.matchesReplacement(candidate.xml()))
+            assertFalse(candidate.matchesReplacement(baseline))
+            assertEquals(NfcProvisionPlan.ForwardCheck.CONFLICT, plan.checkForward(current))
+            if (baselineSource == NfcProvisionPlan.BaselineSource.RUNTIME) {
+                assertTrue(plan.matchesOriginal(reformatted(baseline)))
+                assertTrue(candidate.matchesReplacement(reformatted(candidate.xml())))
+            }
+        }
+        assertEquals("4000", checkNotNull(NfcProvisionPlan.currentIdentity(baseline, target, 10366)).systemCode)
+        assertEquals("4002", checkNotNull(NfcProvisionPlan.currentIdentity(baseline, target, 99910366)).systemCode)
+        assertNull(NfcProvisionPlan.currentIdentity(baseline, target, 110366))
+        assertThrows(Exception::class.java) { NfcProvisionPlan.currentIdentity(baseline, target, 10367) }
+        assertThrows(Exception::class.java) { NfcProvisionPlan.currentIdentity(baseline, target, 99910367) }
+    }
+
+    @Test fun duplicateCanonicalComponentWithinOneUserIsRejectedEvenWithAnotherUid() {
+        for (uid in listOf(10366, 10367)) {
+            val extra = """<service component="${target.component}" uid="$uid" system-code="4002" nfcid2="02FE222222222222"/>"""
+            val duplicate = edited(source, "</services>", "$extra</services>")
+            for (baselineSource in NfcProvisionPlan.BaselineSource.entries) {
+                assertThrows(Exception::class.java) { plan(duplicate, baselineSource) }
+            }
+        }
+    }
+
+    @Test fun directReplacementConstructorKeepsFileComparisonByDefault() {
+        val candidate = NfcProvisionPlan.Replacement(source, plan().proposedXml())
+        assertEquals(NfcProvisionPlan.BaselineSource.FILE, candidate.source)
+        assertTrue(candidate.matchesObservation(source))
+        assertFalse(candidate.matchesObservation(reformatted(source)))
+        assertTrue(candidate.matchesReplacement(candidate.xml()))
+        assertFalse(candidate.matchesReplacement(reformatted(candidate.xml())))
+    }
+
+    @Test fun fileRollbackStillRequiresExactTargetAttributeSpelling() {
+        val plan = plan()
+        val observation = reformatted(plan.proposedXml())
+        assertFalse(plan.matchesProposed(observation))
+        assertFalse(plan.matchesOriginal(reformatted(source)))
+        assertEquals(NfcProvisionPlan.RollbackCheck.TARGET_CONFLICT, plan.rollbackAgainst(observation).check)
     }
 
     @Test fun wrongHashOwnerPreimageAndNoopAreRejected() {
@@ -180,9 +386,6 @@ class NfcProvisionPlanTest {
         assertFalse(newId.toString().contains(newId.systemCode))
     }
 
-    private fun certificate() = checkNotNull(javaClass.getResourceAsStream("/miui-nfc-signer.hex"))
-        .bufferedReader().use { it.readText().trim().chunked(2).map { pair -> pair.toInt(16).toByte() }.toByteArray() }
-
     private fun archiveFiles(archive: ByteArray): Map<String, ByteArray> {
         val prefix = "ANDROID BACKUP\n5\n1\nnone\n".toByteArray()
         assertTrue(archive.copyOfRange(0, prefix.size).contentEquals(prefix))
@@ -200,16 +403,18 @@ class NfcProvisionPlanTest {
         return files
     }
 
-    @Test fun archiveContainsOnlyFixedManifestAndCeIdentityWithPinnedSigner() {
+    @Test fun archiveContainsOnlyFixedManifestAndCeIdentityWithDeviceMetadata() {
         val plan = plan()
-        val archive = NfcRestoreArchive.forward(plan, certificate())
+        val metadata = NfcBackupFixtures.metadata(version = 12345, sdk = 35, fixture = "restore-probe-signer.hex")
+        val archive = NfcRestoreArchive.forward(plan, metadata)
         val files = archiveFiles(archive)
         assertEquals(listOf("apps/com.android.nfc/_manifest", "apps/com.android.nfc/f/dynamic_systemcode_nfcid2.xml"), files.keys.toList())
         assertArrayEquals(plan.proposedXml(), files.values.last())
         val manifest = files.values.first().toString(Charsets.US_ASCII).trimEnd('\n').split('\n')
-        assertEquals(listOf("1", "com.android.nfc", "36", "36", "", "0", "1"), manifest.take(7))
-        assertEquals(RestoreProbeArchive.hex(certificate()), manifest.last())
-        assertThrows(Exception::class.java) { NfcRestoreArchive.forward(plan, byteArrayOf(0)) }
+        assertEquals(listOf("1", "com.android.nfc", "12345", "35", "", "0", "1"), manifest.take(7))
+        assertEquals(RestoreProbeArchive.hex(metadata.certificates.single()), manifest.last())
+        assertArrayEquals(plan.proposedXml(), NfcSnapshotArchive.parse(archive, metadata).xml)
+        assertThrows(Exception::class.java) { NfcBackupMetadata(36, 36, listOf(byteArrayOf(0))) }
         // Synthetic fixture only, for an independent host-side TAR/zlib check.
         File("build/reports/nfc-provision").apply { mkdirs() }.resolve("forward.ab").writeBytes(archive)
     }
@@ -218,7 +423,7 @@ class NfcProvisionPlanTest {
         val plan = plan()
         val current = edited(plan.proposedXml(), "4001", "4002")
         val candidate = checkNotNull(plan.rollbackAgainst(current).candidate)
-        val archive = NfcRestoreArchive.rollback(candidate, certificate())
+        val archive = NfcRestoreArchive.rollback(candidate, NfcBackupFixtures.metadata())
         val restored = archiveFiles(archive).values.last()
         assertEquals("4002", records(restored)[1]["system-code"])
         assertEquals(records(source)[0], records(restored)[0])

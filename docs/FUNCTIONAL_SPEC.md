@@ -16,7 +16,7 @@ editor, but it is stored only after the user explicitly saves the profile.
 
 Each profile exposes an explicit, scrollable Details dialog. Ordinary mode shows
 the name and Access Code; advanced mode additionally shows the stable profile
-identifier, original and routed NFCID2, routing mode, SPAD0, ID block, System Code,
+identifier, original IDm, SPAD0, ID block, System Code,
 and PMm. Values are selectable. The list/status visibility switches do not redact
 this deliberately opened dialog; advanced details warn about sensitive card data.
 
@@ -25,10 +25,9 @@ this deliberately opened dialog; advanced details warn about sensitive card data
 Advanced mode is a persistent, device-local Settings switch, off by default.
 Ordinary mode keeps card management, backup/import, the default-wallet controls,
 and the optional reader compatibility fix. It hides raw identifiers, data blocks,
-route selectors, and detailed diagnostic output. Active non-default route settings
-remain in effect and have a visible notice and advanced-settings entry on Status.
+and detailed diagnostic output. Neither UI mode offers alternate NFCID2 routes.
 Enabling or disabling this UI mode does not activate NFC, change the selection,
-change route/patch preferences, or remove any card data.
+change emulation-method/patch preferences, or remove any card data.
 
 Version 3.0 exposes an emulation-method selector separately from advanced mode.
 Fresh installations default to saved-identity/Shizuku operation; upgrades preserve
@@ -39,7 +38,7 @@ module route retains its existing foreground registration behavior.
 
 The setup page shows the relevant manual provisioning steps. Technical identity
 fields and the collapsed Lab/snapshot diagnostics require advanced mode. A
-changed selected route disables write/activation for an older prepared identity.
+changed card or original IDm disables write/activation for an older prepared identity.
 Reopening a settled plan requires explicit confirmation and a fresh table export;
 it does not submit a restore or reload. Unresolved same-boot operations stay
 blocked, and preparing a new plan replaces the single retained plan.
@@ -89,13 +88,14 @@ Replace never restores the backed-up selection automatically. Merge preserves th
 current selection only when that record was not changed by the import. Otherwise
 the foreground HCE-F service is disabled and the user must select a profile again.
 
-Normal mode registers the profile IDm. Generated compatibility mode registers
-an Android-compatible 02FE prefix plus six bytes derived from a domain-separated
-SHA-256 digest of the full original IDm. Profile metadata and UUID do not affect
-this identity. The experimental line also retains its original-suffix route.
-Changing RF identity may change the game account. This is not lost-card recovery.
-The retired shared route is disabled on upgrade without deleting any profiles;
-the user must select a card again. See [card-image generation](CARD_IMAGE.md).
+NFCID2 always uses the original profile IDm. There is no generated, fixed or
+prefix-substitution compatibility route, selector, or identity-retirement notice.
+Obsolete identity-mode preferences are ignored without changing profiles,
+selection or the Shizuku/module method. Old system registrations are not rewritten
+on upgrade; a mismatched saved identity requires explicit setup. Internal public-API
+initialization may still use the legal 4000/02FE placeholder when a registration
+is missing, before provisioning the original IDm/88B4. It is not an emulation mode.
+See [card-image generation](CARD_IMAGE.md).
 
 The system code is `88B4`. HCE-F service metadata statically declares the advertised
 PMm as `00F1000000014300`; vendor behavior still requires external verification.
@@ -111,11 +111,11 @@ the service returns no application response, rather than a built-in identity.
 
 The image preserves captured `00/82` exactly. Missing SPAD0 defaults to zeros;
 missing ID block defaults to the original profile IDm and zero suffix.
-Device metadata `83` contains the routed RF IDm and configured PMm; `85`
+Device metadata `83` contains the original profile IDm and configured PMm; `85`
 contains the configured System Code; `88` declares the implemented read-only
 policy. Scratch defaults, REG and service metadata use documented defaults.
 Unimplemented key/authentication/counter/state blocks are not fabricated.
-The image cache includes RF identity so route changes update device metadata.
+The image cache follows the full profile so card selection or edits refresh metadata.
 The new image is not a complete physical-card implementation and has not yet
 passed reader/cabinet regression tests.
 

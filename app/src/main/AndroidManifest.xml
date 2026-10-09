@@ -38,6 +38,10 @@
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <activity
+            android:name=".ui.DeviceCapabilitiesActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.ShizukuProvisioningActivity"
             android:exported="false" />
 

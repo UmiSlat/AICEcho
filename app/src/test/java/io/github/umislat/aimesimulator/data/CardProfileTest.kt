@@ -5,37 +5,25 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class CardProfileTest {
-    @Test fun routesOriginalGeneratedAndPrefixCompatibilityIdentifiers() {
+    @Test fun retainsTheOriginalIdentifier() {
         val profile = requireNotNull(CardProfile.create("Test", "4D494D494245414D"))
-        assertEquals("4D494D494245414D", profile.routedIdm(IdmRouteMode.ORIGINAL))
-        assertEquals(
-            CompatibilityIdm.generate(profile.idm),
-            profile.routedIdm(IdmRouteMode.GENERATED_COMPATIBILITY)
-        )
-        assertEquals(
-            "02FE4D494245414D",
-            profile.routedIdm(IdmRouteMode.PREFIX_COMPATIBILITY)
-        )
+        assertEquals("4D494D494245414D", profile.idm)
     }
 
-    @Test fun prefixCompatibilityKeepsAnExisting02feIdentifier() {
+    @Test fun acceptsAnOriginal02feIdentifierWithoutTransformingIt() {
         val profile = requireNotNull(CardProfile.create("Test", "02FE123456789ABC"))
-
-        assertEquals(
-            "02FE123456789ABC",
-            profile.routedIdm(IdmRouteMode.PREFIX_COMPATIBILITY)
-        )
+        assertEquals("02FE123456789ABC", profile.idm)
     }
 
     @Test fun validatesCapturedBlocks() {
         assertNull(CardProfile.create("Invalid", "02FE123456789ABC", spad0 = "00"))
     }
 
-    @Test fun compatibilityIdentityDoesNotDependOnProfileMetadataOrUuid() {
+    @Test fun originalIdentityDoesNotDependOnProfileMetadataOrUuid() {
         val profile = requireNotNull(CardProfile.create("Original", "012E112233445566"))
         val imported = profile.copy(label = "Renamed", profileId = "new-import-id",
             accessCode = "12345678901234567890", spad0 = "00".repeat(16))
-        assertEquals(profile.routedIdm(IdmRouteMode.GENERATED_COMPATIBILITY), imported.routedIdm(IdmRouteMode.GENERATED_COMPATIBILITY))
+        assertEquals(profile.idm, imported.idm)
     }
 
     @Test fun normalizesAndFormatsPrintedAccessCode() {

@@ -46,7 +46,7 @@ class NfcProvisionStoreTest {
         val file = File(folder.root, "nfc-provision-plan.json")
         val original = file.readText()
         for ((key, replacement) in listOf(
-            "version" to 2, "token" to "bad", "uid" to uid + 1,
+            "version" to 3, "token" to "bad", "uid" to uid + 1,
             "originalHash" to "0".repeat(64), "proposedHash" to "0".repeat(64),
             "oldSystemCode" to "4001", "nfcid2" to "012E998877665544",
             "proposed" to Base64.encodeToString("<services/>".toByteArray(), Base64.NO_WRAP)
@@ -56,7 +56,7 @@ class NfcProvisionStoreTest {
             assertNull("Accepted corrupt $key", store.read(uid))
             assertEquals(corrupt, file.readText())
         }
-        file.writeBytes(ByteArray(4 * NfcSnapshotArchive.MAX_XML + 1) { 32 })
+        file.writeBytes(ByteArray(6 * NfcSnapshotArchive.MAX_XML + 1) { 32 })
         assertNull(store.read(uid))
         assertTrue(file.exists())
     }
@@ -79,6 +79,35 @@ class NfcProvisionStoreTest {
         store.save(data, uid, 186)
         assertEquals("b".repeat(32), NfcProvisionStore(folder.root).read(uid)!!.getString("token"))
         assertEquals(186, store.read(uid)!!.getInt("boot"))
+    }
+
+    @Test fun versionOnePlansRemainExactFilePlans() {
+        val store = NfcProvisionStore(folder.root)
+        store.save(savedPlan(uid), uid, 185)
+        val file = File(folder.root, "nfc-provision-plan.json")
+        val legacy = JSONObject(file.readText()).apply {
+            put("version", 1); remove("source"); remove("state"); remove("direction")
+        }
+        file.writeText(legacy.toString())
+        val saved = checkNotNull(store.read(uid))
+        val plan = NfcProvisionStore.validate(saved, uid)
+        assertEquals(NfcProvisionPlan.BaselineSource.FILE, plan.source)
+        assertEquals(NfcProvisionWorkflow.State.PREPARED, NfcProvisionStore.checkpoint(saved, plan).state)
+        assertFalse(plan.matchesOriginal(plan.originalXml() + "\n".toByteArray()))
+    }
+
+    @Test fun invalidProvenanceOrIncompleteRollbackCheckpointIsRejected() {
+        val store = NfcProvisionStore(folder.root)
+        val data = savedPlan(uid).apply { putString("source", "RUNTIME") }
+        store.save(data, uid, 185)
+        val file = File(folder.root, "nfc-provision-plan.json")
+        val original = file.readText()
+        for ((key, value) in listOf("source" to "DUMPSYS", "state" to "READY", "direction" to "sideways")) {
+            file.writeText(JSONObject(original).put(key, value).toString())
+            assertNull(store.read(uid))
+        }
+        file.writeText(JSONObject(original).put("state", "AWAITING_RELOAD").put("direction", "ROLLBACK").toString())
+        assertNull(store.read(uid))
     }
 
     @Test @Config(sdk = [36]) fun silentAtomicRenameFailureIsNotReportedAsASavedPlan() {

@@ -4,9 +4,7 @@ import android.app.Application
 import android.content.Context
 import io.github.umislat.aimesimulator.data.CardProfile
 import io.github.umislat.aimesimulator.data.CardStore
-import io.github.umislat.aimesimulator.data.CompatibilityIdm
 import io.github.umislat.aimesimulator.data.HexCodec
-import io.github.umislat.aimesimulator.data.IdmRouteMode
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -72,16 +70,17 @@ class AimeHostServiceRegressionTest {
         assertEquals(HceSession.SYSTEM_CODE + "0000000000000000000000000000", HexCodec.encode(result.blocks[3]))
     }
 
-    @Test fun routeChangesRefreshCachedMetadataWithoutChangingCapturedBlocks() {
+    @Test fun cardChangesRefreshCachedMetadataWithoutChangingCapturedBlocks() {
         read(profile.idm, 0x00, 0x82, 0x83)
-        setGenerated(true)
+        val other = profile.copy(profileId = "other-card", idm = "012E998877665544")
+        store.put(other)
+        store.select(other.profileId)
         assertNull(packet(profile.idm, 0x00))
-        val generated = CompatibilityIdm.generate(profile.idm)
-        val result = read(generated, 0x00, 0x82, 0x83)
+        val result = read(other.idm, 0x00, 0x82, 0x83)
         assertEquals(profile.spad0, HexCodec.encode(result.blocks[0]))
         assertEquals(profile.idBlock, HexCodec.encode(result.blocks[1]))
-        assertEquals(generated + "00F1000000014300", HexCodec.encode(result.blocks[2]))
-        setGenerated(false)
+        assertEquals(other.idm + "00F1000000014300", HexCodec.encode(result.blocks[2]))
+        store.select(profile.profileId)
         assertEquals(profile.idm + "00F1000000014300", HexCodec.encode(read(profile.idm, 0x83).blocks.single()))
     }
 
@@ -102,12 +101,18 @@ class AimeHostServiceRegressionTest {
         assertNull(packet(profile.idm, 0x00))
     }
 
-    @Test fun oldFixedIdentityMigrationDoesNotExposeSelectedCard() {
+    @Test fun obsoleteIdentitySettingsNeverEnableAlternateResponses() {
         val preferences = context.getSharedPreferences("aime_simulator", Context.MODE_PRIVATE)
-        preferences.edit().putString("idm_route_mode", "FIXED_COMPATIBILITY").commit()
-        assertNull(packet(profile.idm, 0x00))
-        assertEquals(listOf(profile), CardStore(context).profiles())
-        assertTrue(CardStore(context).compatibilityRetiredNoticePending())
+        for (mode in listOf("FIXED_COMPATIBILITY", "GENERATED_COMPATIBILITY", "PREFIX_COMPATIBILITY")) {
+            preferences.edit().putString("idm_route_mode", mode).putBoolean("compatibility_mode", true).commit()
+            assertNull(packet("02FE112233445566", 0x00))
+            assertNull(packet("02FED782A6CF82BB", 0x00))
+            val response = read(profile.idm, 0x00, 0x82, 0x83)
+            assertEquals(profile.spad0, HexCodec.encode(response.blocks[0]))
+            assertEquals(profile.idBlock, HexCodec.encode(response.blocks[1]))
+            assertEquals(profile.idm + "00F1000000014300", HexCodec.encode(response.blocks[2]))
+            assertEquals(profile, CardStore(context).selectedProfile())
+        }
     }
 
     @Test fun unsupportedBlockRejectsWholeReadWithoutPartialData() {
@@ -168,7 +173,4 @@ class AimeHostServiceRegressionTest {
 
     private fun bytes(value: String): ByteArray = requireNotNull(HexCodec.decode(value))
 
-    private fun setGenerated(enabled: Boolean) {
-        store.setIdmRouteMode(if (enabled) IdmRouteMode.GENERATED_COMPATIBILITY else IdmRouteMode.ORIGINAL)
-    }
 }

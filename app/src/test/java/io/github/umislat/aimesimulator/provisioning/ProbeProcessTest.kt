@@ -12,6 +12,23 @@ import java.util.concurrent.atomic.AtomicReference
 class ProbeProcessTest {
     @get:Rule val temporary = TemporaryFolder()
 
+    @Test fun backupOutputIsBinaryAndNeverMixedWithStderr() {
+        val pid = temporary.newFile()
+        val result = ProbeProcess.run(arguments("binary-stderr", pid), binaryOutputLimit = 32768)
+        assertFalse(result.uncertain)
+        assertEquals(0, result.exitCode)
+        assertArrayEquals(ByteArray(16384) { it.toByte() }, result.output)
+        assertChildStopped(pid)
+    }
+
+    @Test fun backupOutputStillHasABound() {
+        val pid = temporary.newFile()
+        val result = ProbeProcess.run(arguments("binary-stderr", pid), binaryOutputLimit = 4096)
+        assertTrue(result.uncertain)
+        assertEquals(0, result.output.size)
+        assertChildStopped(pid)
+    }
+
     private fun arguments(mode: String, pid: File): List<String> {
         val java = File(System.getProperty("java.home"), "bin/java" +
             if (System.getProperty("os.name").orEmpty().startsWith("Windows")) ".exe" else "")

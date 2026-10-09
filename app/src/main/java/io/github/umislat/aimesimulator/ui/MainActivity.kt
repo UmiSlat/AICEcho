@@ -47,7 +47,6 @@ import io.github.umislat.aimesimulator.data.CardBackupCodec
 import io.github.umislat.aimesimulator.data.CardImportPlanner
 import io.github.umislat.aimesimulator.data.CardProfile
 import io.github.umislat.aimesimulator.data.CardStore
-import io.github.umislat.aimesimulator.data.IdmRouteMode
 import io.github.umislat.aimesimulator.nfc.DefaultNfcAppChecker
 import io.github.umislat.aimesimulator.nfc.DefaultNfcAppPolicy
 import io.github.umislat.aimesimulator.nfc.HceActivationRetryPolicy
@@ -145,15 +144,6 @@ class MainActivity : AppCompatActivity() {
         setInsetAwareContentView(buildShell())
         bottomNavigation.menu.findItem(selectedTab).isChecked = true
         showPage(selectedTab, refreshPmm = selectedTab == TAB_STATUS && pmmSnapshot == null)
-        if (store.compatibilityRetiredNoticePending()) {
-            MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.compatibility_retired_title)
-                .setMessage(R.string.compatibility_retired_message)
-                .setPositiveButton(android.R.string.ok) { _, _ ->
-                    store.dismissCompatibilityRetiredNotice()
-                }
-                .show()
-        }
     }
 
     override fun onResume() {
@@ -362,14 +352,8 @@ class MainActivity : AppCompatActivity() {
             }
             addView(cardPageStatusView)
             store.selectedProfile()?.let { profile ->
-                val routeMode = store.idmRouteMode()
                 addView(TextView(this@MainActivity).apply {
-                    text = if (!store.advancedMode()) {
-                        getString(R.string.current_card_summary, profile.label)
-                    } else getString(
-                        routeModeStatusRes(routeMode),
-                        profile.label
-                    )
+                    text = getString(R.string.current_card_summary, profile.label)
                     textSize = 13f
                     alpha = 0.72f
                     setPadding(0, dp(8), 0, 0)
@@ -482,7 +466,7 @@ class MainActivity : AppCompatActivity() {
                         } else getString(
                             R.string.current_identity_summary,
                             profile.label,
-                            if (store.showIdm()) profile.routedIdm(store.idmRouteMode())
+                            if (store.showIdm()) profile.idm
                             else getString(R.string.hidden_value)
                         )
                         textSize = 14f
@@ -519,42 +503,17 @@ class MainActivity : AppCompatActivity() {
                 })
             })
         })
-        if (!store.advancedMode() && hasAdvancedConfiguration()) {
-            content.addView(TextView(this).apply {
-                setText(R.string.advanced_configuration_active)
-                textSize = 13f
-                alpha = 0.72f
-                setPadding(0, dp(12), 0, 0)
-            })
-            content.addView(MaterialButton(
-                this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
-            ).apply {
-                setText(R.string.open_advanced_settings)
-                setOnClickListener {
-                    store.setAdvancedMode(true)
-                    showPage(TAB_STATUS, refreshPmm = false)
-                }
-            })
-        }
-        if (store.advancedMode()) {
-            content.addView(sectionTitle(R.string.route_mode))
-            content.addView(routeModeSelector())
-            content.addView(TextView(this).apply {
-                setText(R.string.route_mode_summary)
-                textSize = 13f
-                alpha = 0.72f
-                setPadding(0, 0, 0, dp(8))
-            })
-        }
         content.addView(sectionTitle(R.string.system_requirements))
+        content.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            setText(R.string.device_capabilities)
+            setIconResource(R.drawable.ic_nav_status)
+            setOnClickListener { startActivity(Intent(this@MainActivity, DeviceCapabilitiesActivity::class.java)) }
+        }, LinearLayout.LayoutParams(-1, -2))
         content.addView(defaultNfcAppCard())
         if (!store.persistedRouteOnlyMode()) content.addView(pmmCard().apply { applyMargins(vertical = 6) })
         scroll.addView(content)
         return scroll
     }
-
-    private fun hasAdvancedConfiguration(): Boolean =
-        store.idmRouteMode() != IdmRouteMode.ORIGINAL
 
     private fun emulationActions(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
@@ -567,7 +526,7 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener {
                     val selected = store.selectedProfile() ?: return@setOnClickListener
                     startActivity(PersistedEmulationActivity.intent(this@MainActivity, selected.label,
-                        selected.routedIdm(store.idmRouteMode()), store.advancedMode()))
+                        selected.idm, store.advancedMode()))
                 }
             }, LinearLayout.LayoutParams(-1, -2))
         }
@@ -634,54 +593,6 @@ class MainActivity : AppCompatActivity() {
                 topMargin = dp(8)
             })
         })
-    }
-
-    private fun routeModeSelector(): MaterialButtonToggleGroup =
-        MaterialButtonToggleGroup(this).apply {
-            isSingleSelection = true
-            isSelectionRequired = true
-            val buttons = linkedMapOf<Int, IdmRouteMode>()
-            listOf(
-                IdmRouteMode.ORIGINAL to R.string.route_mode_original,
-                IdmRouteMode.GENERATED_COMPATIBILITY to R.string.route_mode_fixed,
-                IdmRouteMode.PREFIX_COMPATIBILITY to R.string.route_mode_prefix
-            ).forEach { (mode, label) ->
-                val button = MaterialButton(
-                    this@MainActivity,
-                    null,
-                    com.google.android.material.R.attr.materialButtonOutlinedStyle
-                ).apply {
-                    id = View.generateViewId()
-                    setText(label)
-                    textSize = 12f
-                    maxLines = 2
-                    minWidth = 0
-                    minimumWidth = 0
-                    minHeight = dp(48)
-                }
-                buttons[button.id] = mode
-                addView(button, LinearLayout.LayoutParams(0, -2, 1f))
-                if (mode == store.idmRouteMode()) check(button.id)
-            }
-            addOnButtonCheckedListener { _, checkedId, isChecked ->
-                val mode = buttons[checkedId] ?: return@addOnButtonCheckedListener
-                if (!isChecked || mode == store.idmRouteMode()) return@addOnButtonCheckedListener
-                store.setIdmRouteMode(mode)
-                activateConfiguredRoute()
-                showPage(TAB_STATUS, refreshPmm = false)
-            }
-        }
-
-    private fun routeModeLabelRes(mode: IdmRouteMode): Int = when (mode) {
-        IdmRouteMode.ORIGINAL -> R.string.normal_mode
-        IdmRouteMode.GENERATED_COMPATIBILITY -> R.string.fixed_compatibility_mode
-        IdmRouteMode.PREFIX_COMPATIBILITY -> R.string.prefix_compatibility_mode
-    }
-
-    private fun routeModeStatusRes(mode: IdmRouteMode): Int = when (mode) {
-        IdmRouteMode.ORIGINAL -> R.string.status_profile_normal
-        IdmRouteMode.GENERATED_COMPATIBILITY -> R.string.status_profile_compatibility
-        IdmRouteMode.PREFIX_COMPATIBILITY -> R.string.status_profile_prefix_compatibility
     }
 
     private fun pmmCard(): MaterialCardView = MaterialCardView(this).apply {
@@ -962,7 +873,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showCardDetails(profile: CardProfile) {
-        val routeMode = store.idmRouteMode()
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             if (store.advancedMode()) {
@@ -977,15 +887,6 @@ class MainActivity : AppCompatActivity() {
                 addView(cardDetailLine(
                     R.string.card_details_original_idm,
                     formatCardDetailHex(profile.idm)
-                ))
-                addView(cardDetailLine(
-                    R.string.card_details_routed_nfcid2,
-                    formatCardDetailHex(profile.routedIdm(routeMode))
-                ))
-                addView(cardDetailLine(
-                    R.string.route_mode,
-                    getString(routeModeLabelRes(routeMode)),
-                    monospace = false
                 ))
                 addView(cardDetailLine(
                     R.string.access_code,
@@ -1266,7 +1167,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val previousReport = lastHceReport
-        val report = session.activate(this, selected, store.idmRouteMode())
+        val report = session.activate(this, selected)
         val likelyActiveLink = HceActivationRetryPolicy.isLikelyActiveLink(
             report,
             previousReport,
@@ -1352,7 +1253,6 @@ class MainActivity : AppCompatActivity() {
         }
         val assessment = RootlessAssessment.from(
             lastHceReport,
-            store.idmRouteMode(),
             store.selectedProfile() != null
         )
         val showDiagnostic = assessment.outcome !=
@@ -1362,14 +1262,8 @@ class MainActivity : AppCompatActivity() {
         val (title, detail) = when (assessment.outcome) {
             RootlessAssessment.Outcome.PROFILE_REQUIRED ->
                 R.string.rootless_profile_required_title to R.string.rootless_profile_required_detail
-            RootlessAssessment.Outcome.REGISTRATION_ACCEPTED -> when (assessment.routeMode) {
-                IdmRouteMode.ORIGINAL ->
-                    R.string.rootless_accepted_title to R.string.rootless_accepted_normal_detail
-                IdmRouteMode.GENERATED_COMPATIBILITY ->
-                    R.string.rootless_accepted_title to R.string.rootless_accepted_compatibility_detail
-                IdmRouteMode.PREFIX_COMPATIBILITY ->
-                    R.string.rootless_accepted_title to R.string.rootless_accepted_prefix_detail
-            }
+            RootlessAssessment.Outcome.REGISTRATION_ACCEPTED ->
+                R.string.rootless_accepted_title to R.string.rootless_accepted_normal_detail
             RootlessAssessment.Outcome.UNSUPPORTED ->
                 R.string.rootless_unsupported_title to R.string.rootless_unsupported_detail
             RootlessAssessment.Outcome.NFC_DISABLED ->
@@ -1380,13 +1274,6 @@ class MainActivity : AppCompatActivity() {
                 R.string.rootless_link_active_title to R.string.rootless_link_active_detail
             RootlessAssessment.Outcome.DYNAMIC_ID_REJECTED ->
                 R.string.rootless_dynamic_id_title to R.string.rootless_dynamic_id_detail
-            RootlessAssessment.Outcome.COMPATIBILITY_ID_REJECTED -> if (
-                assessment.routeMode == IdmRouteMode.PREFIX_COMPATIBILITY
-            ) {
-                R.string.rootless_prefix_id_title to R.string.rootless_prefix_id_detail
-            } else {
-                R.string.rootless_compatibility_id_title to R.string.rootless_compatibility_id_detail
-            }
             RootlessAssessment.Outcome.SYSTEM_CODE_REJECTED ->
                 R.string.rootless_system_code_title to R.string.rootless_system_code_detail
             RootlessAssessment.Outcome.ENABLE_FAILED ->

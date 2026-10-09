@@ -23,6 +23,12 @@ public final class ProcessFixture {
         long pid = (Long) HANDLE.getMethod("pid").invoke(self);
         Files.write(new File(args[1]).toPath(), Long.toString(pid).getBytes(StandardCharsets.US_ASCII));
         switch (args[0]) {
+            case "binary-stderr":
+                System.err.write(new byte[16384]);
+                byte[] bytes = new byte[16384];
+                for (int i = 0; i < bytes.length; i++) bytes[i] = (byte) i;
+                System.out.write(bytes);
+                break;
             case "echo":
                 System.in.transferTo(System.out);
                 break;

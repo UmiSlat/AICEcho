@@ -27,77 +27,39 @@ class CardStoreMigrationTest {
         profileId = "saved-profile"
     ))
 
-    @Before fun prepareLegacyStorage() {
+    @Before fun prepareStorage() {
         context = RuntimeEnvironment.getApplication()
         java.io.File(context.filesDir, "cards.json").delete()
         preferences = context.getSharedPreferences("aime_simulator", Context.MODE_PRIVATE)
         preferences.edit().clear().putBoolean("storage_migrated", true).commit()
-        val store = CardStore(context)
-        store.put(profile)
-        store.select(profile.profileId)
+        CardStore(context).apply { put(profile); select(profile.profileId) }
     }
 
-    @Test fun retiresOldFixedModeWithoutTouchingSerializedCardData() {
-        legacyFixedMode()
-        val encoded = preferences.getString("profiles_v2", null)
+    @Test fun obsoleteIdentitySettingsDoNotChangeCardsSelectionOrEmulationMethod() {
+        for (mode in listOf("ORIGINAL", "FIXED_COMPATIBILITY", "GENERATED_COMPATIBILITY", "PREFIX_COMPATIBILITY", "UNKNOWN")) {
+            preferences.edit().putString("idm_route_mode", mode)
+                .putBoolean("compatibility_mode", true)
+                .putBoolean("compatibility_retired_notice", true)
+                .putBoolean("persisted_route_only_mode", true).commit()
+            val before = preferences.all
 
-        val migrated = CardStore(context)
+            val reopened = CardStore(context)
 
-        assertNull(migrated.selectedProfile())
-        assertOriginalRoute(migrated)
-        assertTrue(migrated.compatibilityRetiredNoticePending())
-        assertEquals(encoded, preferences.getString("profiles_v2", null))
-        assertEquals(listOf(profile), migrated.profiles())
-        assertFalse(migrated.persistedRouteOnlyMode())
+            assertEquals(profile, reopened.selectedProfile())
+            assertEquals(listOf(profile), reopened.profiles())
+            assertTrue(reopened.persistedRouteOnlyMode())
+            assertEquals(before, preferences.all)
+        }
     }
 
-    @Test fun honorsLegacyBooleanMode() {
-        preferences.edit().remove("idm_route_mode")
-            .putBoolean("compatibility_mode", true).commit()
-
-        val migrated = CardStore(context)
-
-        assertNull(migrated.selectedProfile())
-        assertOriginalRoute(migrated)
-        assertTrue(migrated.compatibilityRetiredNoticePending())
-        assertEquals(listOf(profile), migrated.profiles())
+    @Test fun unusedBooleanCompatibilitySettingDoesNotClearSelection() {
+        preferences.edit().remove("idm_route_mode").putBoolean("compatibility_mode", true).commit()
+        val before = preferences.all
+        assertEquals(profile, CardStore(context).selectedProfile())
+        assertEquals(before, preferences.all)
     }
 
-    @Test fun leavesOriginalSelectionAndDataUntouched() {
-        originalMode()
-        val migrated = CardStore(context)
-
-        assertEquals(profile, migrated.selectedProfile())
-        assertOriginalRoute(migrated)
-        assertFalse(migrated.compatibilityRetiredNoticePending())
-    }
-
-    @Test fun doesNotRetireGeneratedModeAgainAfterUserReselects() {
-        legacyFixedMode()
-        val migrated = CardStore(context)
-        migrated.dismissCompatibilityRetiredNotice()
-        generatedMode(migrated)
-        migrated.select(profile.profileId)
-
-        val reopened = CardStore(context)
-
-        assertEquals(profile, reopened.selectedProfile())
-        assertFalse(reopened.compatibilityRetiredNoticePending())
-        assertGeneratedRoute(reopened)
-    }
-
-    @Test fun keepsNoticePendingAcrossStoreInstancesUntilAcknowledged() {
-        legacyFixedMode()
-        assertTrue(CardStore(context).compatibilityRetiredNoticePending())
-        assertTrue(CardStore(context).compatibilityRetiredNoticePending())
-
-        CardStore(context).dismissCompatibilityRetiredNotice()
-
-        assertFalse(CardStore(context).compatibilityRetiredNoticePending())
-        assertNull(CardStore(context).selectedProfile())
-    }
-
-    @Test fun migratesLegacyJsonWithoutAutoSelectingRetiredIdentity() {
+    @Test fun importsLegacyCardDataWithoutIdentityMigration() {
         preferences.edit().clear().putString("idm_route_mode", "FIXED_COMPATIBILITY").commit()
         val legacy = """
             [{"key":"legacy","name":"Saved","idm":"012E112233445566",
@@ -109,9 +71,8 @@ class CardStoreMigrationTest {
 
         val migrated = CardStore(context)
 
-        assertNull(migrated.selectedProfile())
-        assertEquals(profile.copy(profileId = "legacy"), migrated.profiles().single())
-        assertTrue(migrated.compatibilityRetiredNoticePending())
+        assertEquals(profile.copy(profileId = "legacy"), migrated.selectedProfile())
+        assertEquals(listOf(profile.copy(profileId = "legacy")), migrated.profiles())
         assertTrue(preferences.getBoolean("storage_migrated", false))
     }
 
@@ -121,23 +82,10 @@ class CardStoreMigrationTest {
 
         assertTrue(store.profiles().isEmpty())
         assertNull(store.selectedProfile())
-        assertOriginalRoute(store)
-        assertFalse(store.compatibilityRetiredNoticePending())
         assertTrue(store.persistedRouteOnlyMode())
+        assertFalse(preferences.contains("idm_route_mode"))
         store.put(profile)
         assertTrue(CardStore(context).persistedRouteOnlyMode())
-    }
-
-    @Test fun preservesPrefixModeAndItsPersistedRouteOption() {
-        preferences.edit().putString("idm_route_mode", "PREFIX_COMPATIBILITY")
-            .putBoolean("persisted_route_only_mode", true).commit()
-
-        val reopened = CardStore(context)
-
-        assertEquals(profile, reopened.selectedProfile())
-        assertEquals(IdmRouteMode.PREFIX_COMPATIBILITY, reopened.idmRouteMode())
-        assertTrue(reopened.persistedRouteOnlyMode())
-        assertFalse(reopened.compatibilityRetiredNoticePending())
     }
 
     @Test fun upgradingExistingModuleUsersDoesNotSwitchTheirMethod() {
@@ -148,19 +96,4 @@ class CardStoreMigrationTest {
         assertEquals(profile, store.selectedProfile())
         assertEquals(encoded, preferences.getString("profiles_v2", null))
     }
-
-    private fun legacyFixedMode() {
-        preferences.edit().putString("idm_route_mode", "FIXED_COMPATIBILITY")
-            .putBoolean("persisted_route_only_mode", true).commit()
-    }
-
-    private fun originalMode() {
-        preferences.edit().putString("idm_route_mode", "ORIGINAL").commit()
-    }
-
-    private fun generatedMode(store: CardStore) = store.setIdmRouteMode(IdmRouteMode.GENERATED_COMPATIBILITY)
-
-    private fun assertOriginalRoute(store: CardStore) = assertEquals(IdmRouteMode.ORIGINAL, store.idmRouteMode())
-
-    private fun assertGeneratedRoute(store: CardStore) = assertEquals(IdmRouteMode.GENERATED_COMPATIBILITY, store.idmRouteMode())
 }

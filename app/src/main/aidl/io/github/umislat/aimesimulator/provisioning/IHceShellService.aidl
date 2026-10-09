@@ -1,6 +1,7 @@
 package io.github.umislat.aimesimulator.provisioning;
 
 import android.os.Bundle;
+import io.github.umislat.aimesimulator.provisioning.INfcRollbackCheckpoint;
 
 // Provisioning only targets this app's AimeHostService; no generic command or path.
 interface IHceShellService {
@@ -16,7 +17,8 @@ interface IHceShellService {
     Bundle readNfcProvisionPlan(String token) = 9;
     Bundle applyNfcProvision(String token) = 10;
     Bundle reloadNfcProvision(String token) = 11;
-    Bundle rollbackNfcProvision(String token) = 12;
+    Bundle rollbackNfcProvision(String token, INfcRollbackCheckpoint checkpoint) = 12;
     Bundle resumeNfcProvision(in Bundle savedPlan) = 13;
+    Bundle inspectNfcRuntime() = 14;
     void destroy() = 16777114;
 }

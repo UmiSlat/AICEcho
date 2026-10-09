@@ -6,6 +6,12 @@ or redistribute any material.
 
 ## Current status (2026-10-01)
 
+Update (2026-10-09): the application now retains only original-IDm emulation.
+The subsequently introduced SHA-256 compatibility generator, suffix substitution
+and identity-retirement migration/UI have also been removed. The dated audit
+and implementation records below remain historical; this does not rewrite Git
+history or change previous licensing conclusions.
+
 The owner chose removal rather than an alternative codec or a permission
 request. Current source no longer contains `AicAccessCodeCodec.kt`, its
 2304-byte substitution table, the decoding tests, or the HINATA-compatible

@@ -1,5 +1,6 @@
 # Android and Gradle output
 .gradle/
+.kotlin/
 build/
 app/build/
 **/.cxx/

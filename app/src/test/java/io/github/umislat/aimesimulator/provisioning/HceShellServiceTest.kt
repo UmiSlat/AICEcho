@@ -41,6 +41,7 @@ class HceShellServiceTest {
         assertThrows(IllegalStateException::class.java) { service.snapshotStatus() }
         assertThrows(IllegalStateException::class.java) { service.readNfcSnapshot(token) }
         assertThrows(IllegalStateException::class.java) { service.resumeNfcProvision(Bundle()) }
+        assertThrows(IllegalStateException::class.java) { service.inspectNfcRuntime() }
     }
 
     @Test fun rootBackendCannotSubmitOrVerifyRestore() {
@@ -53,6 +54,7 @@ class HceShellServiceTest {
         assertThrows(IllegalStateException::class.java) { service.startNfcSnapshot(token) }
         assertThrows(IllegalStateException::class.java) { service.readNfcSnapshot(token) }
         assertThrows(IllegalStateException::class.java) { service.resumeNfcProvision(Bundle()) }
+        assertThrows(IllegalStateException::class.java) { service.inspectNfcRuntime() }
     }
 
     @Test fun inspectionDoesNotEnableNfcProvisioningOrChangeProbeState() {
@@ -78,6 +80,7 @@ class HceShellServiceTest {
             assertThrows(IllegalStateException::class.java) { service.startNfcSnapshot("b".repeat(32)) }
             assertThrows(IllegalStateException::class.java) { service.startRestoreProbe("b".repeat(32)) }
             assertThrows(IllegalStateException::class.java) { service.verifyPreviousProbe("b".repeat(32)) }
+            assertThrows(IllegalStateException::class.java) { service.inspectNfcRuntime() }
         }
     }
 
@@ -86,6 +89,17 @@ class HceShellServiceTest {
         HceShellService::class.java.getDeclaredField("result").apply { isAccessible = true }
             .set(service, RestoreProbeWorkflow.Result(RestoreProbeWorkflow.State.UNKNOWN, token))
         assertThrows(IllegalStateException::class.java) { service.startNfcSnapshot("b".repeat(32)) }
+        assertThrows(IllegalStateException::class.java) { service.inspectNfcRuntime() }
         assertEquals("IDLE", service.snapshotStatus().getString("state"))
+    }
+
+    @Test fun unresolvedProvisionBlocksRuntimeInspectionBeforeAnyCommand() {
+        val service = HceShellService(context())
+        for (state in listOf(NfcProvisionWorkflow.State.CONFIRMING, NfcProvisionWorkflow.State.UNKNOWN)) {
+            HceShellService::class.java.getDeclaredField("provision").apply { isAccessible = true }
+                .set(service, NfcProvisionWorkflow.Result(state, token))
+            assertThrows(IllegalStateException::class.java) { service.inspectNfcRuntime() }
+            assertEquals("IDLE", service.snapshotStatus().getString("state"))
+        }
     }
 }

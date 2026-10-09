@@ -12,7 +12,7 @@ sections 3.1.2-3.1.12 and Table 4-6:
 | --- | --- |
 | `00`-`0D`, `0E` | Zero scratch defaults; REG defaults to all FF. Saved SPAD0 replaces `00`. |
 | `82` | Saved ID block, unchanged; otherwise original profile IDm plus zero suffix. |
-| `83` | Routed RF IDm followed by configured PMm. |
+| `83` | Original profile IDm followed by configured PMm. |
 | `84`, `85` | Default service number; configured System Code followed by zeros. |
 | `88` | Read-only permission masks, no NDEF or authentication restrictions, RF parameter 07. |
 
@@ -28,48 +28,50 @@ does not implement real-card issuance, keys, MAC, counters, or writable memory.
 Existing readers may reject it if they depend on the removed issued metadata;
 previous machine tests do not validate this new image.
 
-## Stable compatibility RF identifier
+## Original RF identity only (2026-10-09)
 
-The generated route is:
+The application now always uses the selected profile's original IDm. The generated
+02FE algorithm, suffix substitution, route enum/selector and retirement migration
+have been removed. This development version has no alternate-identity support
+contract. Obsolete preferences are ignored; no migration clears the selection or
+rewrites raw captures, Access Codes or the emulation method.
 
-```text
-02FE || first_6_bytes(SHA-256(domain || original_IDm_bytes))
-domain = ASCII("AimeSimulator/compatibility-idm/v1") || 00
-```
+Registration, provisioning, activation and packet matching all use that original
+IDm. CardImage has no RF-identity override. It preserves captured Block 82 verbatim
+even if its bytes differ from the profile IDm; missing Block 82 uses the original
+IDm, and Block 83 always uses it. A stale alternate system registration cannot
+receive the selected original card's block responses.
 
-All eight original IDm bytes participate, including their prefix. The result is
-stable across restarts, rename, export/import, and profile UUID changes. It is not
-randomized per scan, inferred from an Access Code, allocated by an issuer, or
-guaranteed collision-free (the suffix has only 48 bits). Changing this algorithm
-would change card identity and must be treated as another migration.
-
-The `02FE` prefix serves Android HCE-F identifier compatibility; it is not a
-claim about the original card manufacturer. See Sony's
-[HCE-F Guidelines v1.02](https://www.sony.net/Products/felica/business/tech-support/data/M1053_Host-Based_Card_Emulation_for_NFC-F_Guideline_1.02e.pdf).
-An Android-valid identifier does not bypass System Code validation or prove
-reader/account compatibility.
-
-Original-IDm routing is unchanged. The experimental suffix route is also
-unchanged. The shared legacy identifier is retired. An installation using that
-route loses only its active selection and returns to original-IDm mode; profiles,
-Access Codes, and raw blocks are retained. The experimental saved-route-only
-option is disabled for that migration because its old provisioned identifier
-does not match. A persistent UI notice asks the user to select a card and route
-again. New generated routes require fresh provisioning where applicable.
-
-The generated RF identifier can select a different game account even if SPAD0
-and Block 82 are unchanged. It is a compatibility experiment, not recovery of a
-lost card or a substitute for a pre-loss physical-card backup.
+The internal 4000/02FE placeholder remains available for public-API initialization
+before original-IDm/88B4 provisioning; it is not a user-selectable emulation mode.
+Reader/account compatibility still requires validation. An original card whose
+actual IDm starts with 02FE is not rejected or transformed.
 
 ## Verification boundary
 
-JVM tests cover the digest vector, input normalization, full-IDm participation,
-metadata-independent identity, captured bytes, defaults, per-route device
-metadata, System Code, unsupported blocks, copy-on-read, and write-failure frame.
-Migration now has local Android-runtime coverage as detailed below; real-device
-upgrade and foreground route behavior still need Android upgrade tests. RF,
-account, and cabinet acceptance still need new reader/device tests. Do not
-transfer previous fixed-IDm/template results to this construction.
+Local tests cover original identity preservation, ignored obsolete preferences,
+card data and selection retention, captured bytes, defaults, original-IDm device
+metadata, System Code, unsupported blocks, copy-on-read and write-failure frames.
+RF, account and cabinet acceptance still need version-specific device tests.
+The dated sections below describe earlier snapshots, including since-removed
+compatibility algorithms and migration; they are retained as historical evidence.
+
+### Original-identity cleanup validation (2026-10-09)
+
+The current experimental working tree passed local JDK 22
+`:app:testDebugUnitTest :app:lintDebug`: 616 tests, no failures/errors/skips,
+and lint 0 errors / 19 existing warnings. Coverage includes ignored old route
+preferences, original-only service responses and metadata, card/selection
+preservation, UI controls, original-IDm preparation and mismatched-plan rejection.
+The static 4000/02FE initializer is unchanged. No APK was assembled or installed,
+and there was no phone, reader or account test for this cleanup.
+
+The subsequent local JDK 22 `assembleDebug` produced
+`dist/AimeSimulator-3.0.0-original-idm-preview-debug.apk`, versionCode 48,
+15,779,690 bytes, SHA-256
+`972C8298F4EF2C37249312F21592E5C09D72137DCC38CCEE84C9701EE8E34CC3`.
+Package metadata, APK v2 signing with the existing debug certificate, and artifact
+checks passed. The APK has not been installed; device acceptance remains pending.
 
 ### Full Debug build validation (2026-10-01)
 

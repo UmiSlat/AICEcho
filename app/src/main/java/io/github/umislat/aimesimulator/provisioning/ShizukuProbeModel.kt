@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.nfc.NfcAdapter
 import android.nfc.cardemulation.NfcFCardEmulation
 import android.os.Bundle
+import android.os.Binder
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -29,13 +30,17 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
         val connection: Connection = Connection.MISSING,
         val uid: Int = -1,
         val bu: Boolean = false,
+        val aosp: AospBackupCapabilities? = null,
+        val runtime: NfcRuntimeInventory.Summary = NfcRuntimeInventory.Summary(),
         val markerApp: Boolean = false,
         val provisionCandidate: Boolean = false,
         val provision: NfcProvisionWorkflow.Result = NfcProvisionWorkflow.Result(NfcProvisionWorkflow.State.IDLE),
         val provisionPending: Boolean = false,
         val provisionIdm: String = "",
+        val provisionSource: NfcProvisionPlan.BaselineSource = NfcProvisionPlan.BaselineSource.FILE,
         val planSaved: Boolean = false,
         val savedPlanAvailable: Boolean = false,
+        val savedPlanRequiresResume: Boolean = false,
         val canActivate: Boolean = false,
         val identityReadable: Boolean = false,
         val snapshotCandidate: Boolean = false,
@@ -49,19 +54,29 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
         private val probeUnresolved get() = probe.busy || probe.state in setOf(RestoreProbeWorkflow.State.UNKNOWN,
             RestoreProbeWorkflow.State.NOT_VERIFIED, RestoreProbeWorkflow.State.MARKERS_MATCH)
         private val snapshotUnresolved get() = snapshot.busy || snapshot.state == NfcSnapshotWorkflow.State.UNKNOWN
-        private val provisionUnresolved get() = provision.busy || provisionPending || provision.state == NfcProvisionWorkflow.State.UNKNOWN
+        private val provisionUnresolved get() = provision.busy || provisionPending || provision.state in setOf(
+            NfcProvisionWorkflow.State.UNKNOWN, NfcProvisionWorkflow.State.AWAITING_RELOAD) ||
+            (savedPlanRequiresResume && !planSaved)
+        private val provisionReady get() = connection == Connection.READY && uid == 2000 && bu && provisionCandidate &&
+            !pending && !snapshotPending && !working && !probeUnresolved && !snapshotUnresolved &&
+            !provision.busy && !provisionPending && provision.state != NfcProvisionWorkflow.State.UNKNOWN
         val canStart: Boolean get() = connection == Connection.READY && uid == 2000 && bu && markerApp &&
             !pending && !snapshotPending && !working && !probeUnresolved && !snapshotUnresolved && !provisionUnresolved
         val canVerify: Boolean get() = connection == Connection.READY && uid == 2000 && pending &&
             !working && !probe.busy && !snapshotPending && !snapshotUnresolved && !provisionUnresolved && RestoreProbeArchive.validToken(probe.token)
         val canCapture: Boolean get() = connection == Connection.READY && uid == 2000 && snapshotCandidate &&
             !pending && !snapshotPending && !working && !probeUnresolved && !snapshotUnresolved && !provisionUnresolved
-        val canPrepare: Boolean get() = canCapture && bu && provisionCandidate
-        val canResumePlan: Boolean get() = canPrepare && savedPlanAvailable && !planSaved
+        val canPrepare: Boolean get() = provisionReady && provision.state != NfcProvisionWorkflow.State.AWAITING_RELOAD &&
+            !(savedPlanRequiresResume && !planSaved)
+        val canInspectRuntime: Boolean get() = connection == Connection.READY && uid == 2000 &&
+            !pending && !snapshotPending && !working && !probeUnresolved && !snapshotUnresolved && !provisionUnresolved
+        val canResumePlan: Boolean get() = provisionReady && savedPlanAvailable && !planSaved
         val canApply: Boolean get() = canPrepare && planSaved && provision.state in setOf(
             NfcProvisionWorkflow.State.PREPARED, NfcProvisionWorkflow.State.UNCHANGED)
-        val canReload: Boolean get() = canPrepare && provision.state in setOf(NfcProvisionWorkflow.State.VERIFIED,
-            NfcProvisionWorkflow.State.ALREADY_PRESENT, NfcProvisionWorkflow.State.ROLLED_BACK, NfcProvisionWorkflow.State.RELOADED)
+        val canReload: Boolean get() = provisionReady && provision.state in setOf(NfcProvisionWorkflow.State.VERIFIED,
+            NfcProvisionWorkflow.State.ALREADY_PRESENT, NfcProvisionWorkflow.State.ROLLED_BACK, NfcProvisionWorkflow.State.RELOADED,
+            NfcProvisionWorkflow.State.AWAITING_RELOAD) &&
+            (provision.state != NfcProvisionWorkflow.State.AWAITING_RELOAD || planSaved)
         val canRollback: Boolean get() = canPrepare && planSaved && provision.state in setOf(NfcProvisionWorkflow.State.VERIFIED,
             NfcProvisionWorkflow.State.RELOADED, NfcProvisionWorkflow.State.CONFLICT, NfcProvisionWorkflow.State.UNCHANGED)
         val busy: Boolean get() = working || probe.busy || snapshot.busy || provision.busy
@@ -77,7 +92,8 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
     private val provisionStore = NfcProvisionStore(application.noBackupFilesDir)
     private val provisionJournal = ProbeJournal(application.getSharedPreferences("shizuku_nfc_provision", Context.MODE_PRIVATE), boot)
     private val mutable = MutableLiveData(Screen(savedSnapshot = snapshotStore.read(),
-        savedPlanAvailable = provisionStore.read(application.applicationInfo.uid) != null).let { initial ->
+        savedPlanAvailable = provisionStore.read(application.applicationInfo.uid) != null,
+        savedPlanRequiresResume = NfcProvisionStore.requiresResume(provisionStore.read(application.applicationInfo.uid))).let { initial ->
         val capture = snapshotJournal.read()
         val screen = if (capture.pending) initial.copy(snapshotPending = true,
             snapshot = NfcSnapshotWorkflow.Result(NfcSnapshotWorkflow.State.UNKNOWN, capture.token)) else initial
@@ -95,7 +111,7 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
     private var generation = 0
     private var wantsPermission = false
     private val args = Shizuku.UserServiceArgs(ComponentName(application, HceShellService::class.java))
-        .daemon(false).tag("hcef-restore-probe").processNameSuffix("hcef_restore_probe").version(5)
+        .daemon(false).tag("hcef-restore-probe").processNameSuffix("hcef_restore_probe").version(8)
     private val poll = Runnable { refresh() }
     private val ageTick = object : Runnable {
         override fun run() { if (!closed) { publish(current()); main.postDelayed(this, 30_000) } }
@@ -172,10 +188,10 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
             val captureStatus = remote.snapshotStatus()
             val provisionStatus = remote.nfcProvisionStatus()
             val provision = decodeProvision(provisionStatus)
-            val planSaved = provision.token == provisionEntry.token && provisionStatus.getBoolean("hasPlan") &&
-                (alreadySaved || (!provision.busy && provision.state !in setOf(
-                    NfcProvisionWorkflow.State.IDLE, NfcProvisionWorkflow.State.FAILED, NfcProvisionWorkflow.State.UNKNOWN)))
-            if (planSaved && !alreadySaved) {
+            val hasPlan = provision.token == provisionEntry.token && provisionStatus.getBoolean("hasPlan")
+            val saveCheckpoint = hasPlan && !provision.busy && provision.state != NfcProvisionWorkflow.State.IDLE
+            val planSaved = hasPlan && (alreadySaved || saveCheckpoint)
+            if (saveCheckpoint) {
                 provisionStore.save(remote.readNfcProvisionPlan(provision.token), getApplication<Application>().applicationInfo.uid, boot)
             }
             val capture = decodeSnapshot(captureStatus)
@@ -184,8 +200,9 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
                 snapshotStore.save(remote.readNfcSnapshot(capture.token), capture.token, boot,
                     SystemClock.elapsedRealtime(), Build.FINGERPRINT)
             } else null
+            val retainedPlan = provisionStore.read(getApplication<Application>().applicationInfo.uid)
             Refresh(capabilities, status, capture, saved, provisionStatus, planSaved,
-                provisionStore.read(getApplication<Application>().applicationInfo.uid) != null)
+                retainedPlan != null, NfcProvisionStore.requiresResume(retainedPlan))
         }) { response ->
             val capabilities = response.capabilities
             val previous = current()
@@ -204,6 +221,7 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
             val lostSession = provision.state == NfcProvisionWorkflow.State.IDLE && !provisionJournal.read().pending
             val next = previous.copy(connection = Connection.READY, uid = capabilities.getInt("uid", -1),
                 bu = capabilities.getBoolean("bu"), markerApp = capabilities.getBoolean("markerApp"),
+                aosp = capabilities.getBundle("aospCapabilities")?.let(AospBackupCapabilities::decode),
                 identityReadable = capabilities.getBoolean("identityReadable"),
                 snapshotCandidate = capabilities.getBoolean("nfcSnapshotCandidate"),
                 provisionCandidate = capabilities.getBoolean("nfcProvisioning"),
@@ -211,8 +229,11 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
                 provisionPending = provisionJournal.read().pending,
                 provisionIdm = if (provisionRelevant) response.provision.getString("nfcid2").orEmpty()
                     else if (lostSession) "" else previous.provisionIdm,
+                provisionSource = if (provisionRelevant) NfcProvisionPlan.BaselineSource.valueOf(
+                    response.provision.getString("source") ?: "FILE") else previous.provisionSource,
                 planSaved = response.planSaved,
                 savedPlanAvailable = response.savedPlanAvailable,
+                savedPlanRequiresResume = response.savedPlanRequiresResume,
                 canActivate = provisionRelevant && response.provision.getBoolean("canActivate"),
                 snapshot = if (captureRelevant) response.snapshot else previous.snapshot,
                 snapshotPending = snapshotJournal.read().pending,
@@ -247,6 +268,14 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
         }
     }
 
+    fun inspectRuntime() {
+        if (!current().canInspectRuntime) return
+        val remote = service ?: return
+        rpc({ remote.inspectNfcRuntime() }) { result ->
+            publish(current().copy(runtime = NfcRuntimeInventory.Summary.decode(result), working = false))
+        }
+    }
+
     fun deleteSnapshot() {
         if (current().busy || current().pending || current().snapshotPending || current().provisionPending) return
         snapshotStore.delete()
@@ -257,7 +286,7 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
         if (!current().canPrepare) return
         val store = CardStore(getApplication())
         val profile = store.selectedProfile() ?: return
-        val idm = profile.routedIdm(store.idmRouteMode())
+        val idm = profile.idm
         val token = RestoreProbeArchive.hex(ByteArray(16).also { SecureRandom().nextBytes(it) })
         publish(current().copy(planSaved = false, canActivate = false, provisionIdm = idm))
         provisionRequest(token, NfcProvisionWorkflow.State.PREPARING) { it.prepareNfcProvision(token, idm) }
@@ -296,32 +325,52 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
         if (!current().canApply) return
         val store = CardStore(getApplication())
         val selected = store.selectedProfile() ?: return
-        if (selected.routedIdm(store.idmRouteMode()) != current().provisionIdm) return
+        if (selected.idm != current().provisionIdm) return
         store.setPersistedRouteOnlyMode(true)
         val token = current().provision.token
-        provisionRequest(token, NfcProvisionWorkflow.State.CHECKING) { it.applyNfcProvision(token) }
+        provisionRequest(token, NfcProvisionWorkflow.State.CHECKING, NfcProvisionWorkflow.State.CONFIRMING,
+            NfcProvisionWorkflow.Direction.FORWARD) { it.applyNfcProvision(token) }
     }
 
     fun reloadNfc() {
         if (!current().canReload) return
         val token = current().provision.token
-        provisionRequest(token, NfcProvisionWorkflow.State.RELOADING) { it.reloadNfcProvision(token) }
+        provisionRequest(token, NfcProvisionWorkflow.State.RELOADING,
+            NfcProvisionWorkflow.State.RELOADING.takeIf { current().planSaved }) { it.reloadNfcProvision(token) }
     }
 
     fun rollbackNfc() {
         if (!current().canRollback) return
         val token = current().provision.token
-        provisionRequest(token, NfcProvisionWorkflow.State.ROLLING_BACK) { it.rollbackNfcProvision(token) }
+        val checkpoint = object : INfcRollbackCheckpoint.Stub() {
+            override fun retain(receivedToken: String, observation: ByteArray, replacement: ByteArray) {
+                check(Binder.getCallingUid() == 2000 && receivedToken == token)
+                provisionStore.retainRollback(token, getApplication<Application>().applicationInfo.uid, boot, observation, replacement)
+            }
+        }
+        provisionRequest(token, NfcProvisionWorkflow.State.ROLLING_BACK, NfcProvisionWorkflow.State.ROLLING_BACK,
+            NfcProvisionWorkflow.Direction.ROLLBACK) { it.rollbackNfcProvision(token, checkpoint) }
     }
 
-    private fun provisionRequest(token: String, phase: NfcProvisionWorkflow.State, action: (IHceShellService) -> Bundle) {
+    private fun provisionRequest(token: String, phase: NfcProvisionWorkflow.State,
+        checkpointState: NfcProvisionWorkflow.State? = null, direction: NfcProvisionWorkflow.Direction? = null,
+        action: (IHceShellService) -> Bundle) {
         val remote = service ?: return
         if (!provisionJournal.begin(token)) {
             publish(current().copy(provisionPending = true, provision = NfcProvisionWorkflow.Result(NfcProvisionWorkflow.State.UNKNOWN, token)))
             return
         }
         publish(current().copy(provisionPending = true, canActivate = false, provision = NfcProvisionWorkflow.Result(phase, token)))
-        rpc({ action(remote) }) { status ->
+        rpc({
+            if (checkpointState != null) provisionStore.mark(token, getApplication<Application>().applicationInfo.uid,
+                boot, checkpointState, direction)
+            action(remote).also { status ->
+                val value = decodeProvision(status)
+                if (value.token == token && !value.busy && status.getBoolean("hasPlan")) {
+                    provisionStore.save(remote.readNfcProvisionPlan(token), getApplication<Application>().applicationInfo.uid, boot)
+                }
+            }
+        }) { status ->
             val result = decodeProvision(status)
             check(result.token == token)
             provisionJournal.completeProvision(result)
@@ -396,7 +445,7 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
         releaseBinding()
         val previous = current()
         publish(previous.copy(connection = Connection.ERROR, uid = -1, bu = false, markerApp = false,
-            snapshotCandidate = false,
+            snapshotCandidate = false, aosp = null, runtime = NfcRuntimeInventory.Summary(),
             provisionCandidate = false, canActivate = false,
             provision = if (previous.provisionPending || previous.provision.busy)
                 previous.provision.copy(state = NfcProvisionWorkflow.State.UNKNOWN) else previous.provision,
@@ -419,13 +468,14 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
         RestoreProbeWorkflow.State.valueOf(bundle.getString("state").orEmpty()),
         bundle.getString("token").orEmpty())
     private fun decodeSnapshot(bundle: Bundle) = NfcSnapshotWorkflow.Result(
-        NfcSnapshotWorkflow.State.valueOf(bundle.getString("state").orEmpty()), bundle.getString("token").orEmpty())
+        NfcSnapshotWorkflow.State.valueOf(bundle.getString("state").orEmpty()), bundle.getString("token").orEmpty(),
+        detail = bundle.getString("detail").orEmpty())
     private fun decodeProvision(bundle: Bundle) = NfcProvisionWorkflow.Result(
         NfcProvisionWorkflow.State.valueOf(bundle.getString("state").orEmpty()), bundle.getString("token").orEmpty(),
         bundle.getString("detail").orEmpty())
     private data class Refresh(val capabilities: Bundle, val probe: Bundle,
         val snapshot: NfcSnapshotWorkflow.Result, val saved: NfcSnapshotStore.Summary?, val provision: Bundle,
-        val planSaved: Boolean, val savedPlanAvailable: Boolean)
+        val planSaved: Boolean, val savedPlanAvailable: Boolean, val savedPlanRequiresResume: Boolean)
 
     override fun onCleared() {
         closed = true

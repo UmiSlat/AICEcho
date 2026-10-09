@@ -65,6 +65,17 @@ class AdvancedModeUiTest {
         assertTrue(screenText().contains(profile.formattedAccessCode()!!))
     }
 
+    @Test fun ordinaryStatusCanOpenDeviceChecksWithoutSelectingACard() {
+        store.select(null)
+        showPage(1002)
+        val check = visibleViews(screen()).filterIsInstance<MaterialButton>()
+            .single { it.text == activity.getString(R.string.device_capabilities) }
+        assertTrue(check.isEnabled)
+        check.performClick()
+        assertEquals(DeviceCapabilitiesActivity::class.java.name,
+            org.robolectric.Shadows.shadowOf(activity).nextStartedActivity.component?.className)
+    }
+
     @Test fun advancedModeRespectsExistingListPrivacySwitches() {
         store.setAdvancedMode(true)
         showPage(1001)
@@ -78,7 +89,7 @@ class AdvancedModeUiTest {
     }
 
     @Test fun settingsTogglePersistsWithoutChangingAnyOtherPreference() {
-        configureAdvancedRoute()
+        store.setPersistedRouteOnlyMode(true)
         store.setShowIdm(false)
         val before = preferencesWithoutUiMode()
         showPage(1003)
@@ -166,24 +177,33 @@ class AdvancedModeUiTest {
         showPage(1002)
         assertEquals(1, visibleViews(screen()).filterIsInstance<MaterialButtonToggleGroup>().count())
         assertTrue(screenText().contains(activity.getString(R.string.emulation_method)))
-        assertFalse(screenText().contains(activity.getString(R.string.route_mode)))
         assertTrue(screenText().contains(activity.getString(R.string.compatibility_patch)))
         assertTrue(screenText().contains(activity.getString(R.string.default_nfc_app)))
         store.setAdvancedMode(true)
         showPage(1002)
-        assertTrue(visibleViews(screen()).any { it is MaterialButtonToggleGroup })
+        assertEquals(1, visibleViews(screen()).filterIsInstance<MaterialButtonToggleGroup>().count())
         assertTrue(screenText().contains(activity.getString(R.string.enable_pmm_patch)))
     }
 
-    @Test fun activeAdvancedConfigurationHasVisibleEntryWithoutChangingIdentity() {
-        configureAdvancedRoute()
-        val before = preferencesWithoutUiMode()
-        showPage(1002)
-        assertTrue(screenText().contains(activity.getString(R.string.advanced_configuration_active)))
-        button(screen(), R.string.open_advanced_settings).performClick()
-        assertTrue(store.advancedMode())
-        assertEquals(before, preferencesWithoutUiMode())
-        assertTrue(visibleViews(screen()).any { it is MaterialButtonToggleGroup })
+    @Test fun obsoleteIdentitySettingsDoNotAddRouteControlsOrRewriteTheCard() {
+        store.setPersistedRouteOnlyMode(true)
+        activity.getSharedPreferences("aime_simulator", Context.MODE_PRIVATE).edit()
+            .putString("idm_route_mode", "PREFIX_COMPATIBILITY")
+            .putBoolean("compatibility_retired_notice", true).commit()
+        controller.stop().destroy()
+        controller = Robolectric.buildActivity(MainActivity::class.java).create().start().visible()
+        activity = controller.get()
+        assertEquals(null, ShadowDialog.getLatestDialog())
+        for (advanced in listOf(false, true)) {
+            store.setAdvancedMode(advanced)
+            showPage(1002)
+            assertEquals(1, visibleViews(screen()).filterIsInstance<MaterialButtonToggleGroup>().count())
+            assertFalse(screenText().contains("02FE"))
+            button(screen(), R.string.emulation_start).performClick()
+            assertEquals(profile.idm, org.robolectric.Shadows.shadowOf(activity).nextStartedActivity
+                .getStringExtra(PersistedEmulationActivity.EXTRA_NFCID2))
+            assertEquals(profile, store.selectedProfile())
+        }
     }
 
     @Test fun ordinaryStatusSimplifiesErrorsButAdvancedRetainsDiagnostics() {
@@ -227,7 +247,6 @@ class AdvancedModeUiTest {
         assertTrue(screenText().contains(activity.getString(R.string.emulation_setup)))
         assertFalse(screenText().contains(activity.getString(R.string.compatibility_patch)))
         assertFalse(screenText().contains(activity.getString(R.string.enable_pmm_patch)))
-        assertFalse(screenText().contains(activity.getString(R.string.advanced_configuration_active)))
         MainActivity::class.java.getDeclaredMethod("refreshPmm").apply { isAccessible = true }.invoke(activity)
         assertEquals(null, MainActivity::class.java.getDeclaredField("pmmSnapshot").apply { isAccessible = true }.get(activity))
         showPage(1001)
@@ -235,11 +254,6 @@ class AdvancedModeUiTest {
         val intent = org.robolectric.Shadows.shadowOf(activity).nextStartedActivity
         assertEquals(PersistedEmulationActivity::class.java.name, intent.component!!.className)
         assertEquals(profile.idm, intent.getStringExtra(PersistedEmulationActivity.EXTRA_NFCID2))
-    }
-
-    private fun configureAdvancedRoute() {
-        store.setIdmRouteMode(io.github.umislat.aimesimulator.data.IdmRouteMode.PREFIX_COMPATIBILITY)
-        store.setPersistedRouteOnlyMode(true)
     }
 
     private fun preferencesWithoutUiMode(): Map<String, *> =

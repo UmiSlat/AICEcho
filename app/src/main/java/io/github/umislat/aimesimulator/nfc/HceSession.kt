@@ -10,7 +10,6 @@ import android.os.DeadObjectException
 import android.util.Log
 import io.github.umislat.aimesimulator.data.CardProfile
 import io.github.umislat.aimesimulator.data.CardStore
-import io.github.umislat.aimesimulator.data.IdmRouteMode
 
 internal class HceSession(private val context: Context) {
     enum class Stage {
@@ -32,22 +31,12 @@ internal class HceSession(private val context: Context) {
     fun activate(
         activity: Activity,
         profile: CardProfile,
-        routeMode: IdmRouteMode,
         systemCode: String = SYSTEM_CODE
     ): Report = activateProfile(
         activity,
         profile.profileId,
-        profile.routedIdm(routeMode),
+        profile.idm,
         systemCode
-    )
-
-    fun activatePersistedRoute(
-        activity: Activity,
-        profile: CardProfile,
-        routeMode: IdmRouteMode,
-        systemCode: String = SYSTEM_CODE
-    ): PersistedHceRouteWorkflow.Result = activatePersistedRoute(
-        activity, profile.routedIdm(routeMode), systemCode
     )
 
     fun activatePersistedRoute(
