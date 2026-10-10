@@ -20,10 +20,23 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      SIGNED_MAIN_BUILD: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+
+      - name: Identify CI build
+        id: build
+        run: |
+          short_sha=${GITHUB_SHA::7}
+          echo "version_suffix=-ci.${GITHUB_RUN_NUMBER}.${short_sha}" >> "$GITHUB_OUTPUT"
+          if [ "$SIGNED_MAIN_BUILD" = "true" ]; then
+            echo "variant=release" >> "$GITHUB_OUTPUT"
+          else
+            echo "variant=debug" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -34,6 +47,16 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Test diagnostic tools
+        run: |
+          python3 -m unittest discover -s tools/hcef-lab/test -p 'test_*.py'
+          node --test tools/hinata-diagnostics/*.test.mjs
+
       - name: Install Android build packages
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
@@ -43,7 +66,37 @@ jobs:
             "cmake;3.22.1"
 
       - name: Test and build debug APK
-        run: ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
+        env:
+          CI_VERSION_SUFFIX: ${{ steps.build.outputs.version_suffix }}
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug "-PciVersionSuffix=$CI_VERSION_SUFFIX" --stacktrace
+
+      - name: Prepare main signing key
+        if: env.SIGNED_MAIN_BUILD == 'true'
+        env:
+          ANDROID_SIGNING_KEY: ${{ secrets.ANDROID_SIGNING_KEY }}
+        run: |
+          test -n "$ANDROID_SIGNING_KEY"
+          umask 077
+          printf '%s' "$ANDROID_SIGNING_KEY" | base64 --decode > "$RUNNER_TEMP/aimesimulator-ci-release.jks"
+          test -s "$RUNNER_TEMP/aimesimulator-ci-release.jks"
+
+      - name: Build signed main APK
+        if: env.SIGNED_MAIN_BUILD == 'true'
+        env:
+          AIMESIM_RELEASE_KEYSTORE: ${{ runner.temp }}/aimesimulator-ci-release.jks
+          AIMESIM_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
+          AIMESIM_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          AIMESIM_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          CI_VERSION_SUFFIX: ${{ steps.build.outputs.version_suffix }}
+        run: |
+          test -n "$AIMESIM_RELEASE_STORE_PASSWORD"
+          test -n "$AIMESIM_RELEASE_KEY_ALIAS"
+          test -n "$AIMESIM_RELEASE_KEY_PASSWORD"
+          ./gradlew lintRelease assembleRelease "-PciVersionSuffix=$CI_VERSION_SUFFIX" --stacktrace
+
+      - name: Remove temporary signing key
+        if: always() && env.SIGNED_MAIN_BUILD == 'true'
+        run: rm -f "$RUNNER_TEMP/aimesimulator-ci-release.jks"
 
       - name: Package and verify artifacts
         run: |
@@ -51,27 +104,61 @@ jobs:
           python3 tools/check_artifacts.py
 
       - name: Prepare CI artifact
+        env:
+          APK_VARIANT: ${{ steps.build.outputs.variant }}
         run: |
-          version_name=$(awk -F "'" '/^[[:space:]]*versionName[[:space:]]*=/{print $2; exit}' app/build.gradle)
-          short_sha=${GITHUB_SHA::7}
-          mkdir -p dist/ci
-          cp app/build/outputs/apk/debug/app-debug.apk "dist/ci/AimeSimulator-${version_name}-${short_sha}-debug.apk"
-          cd dist/ci
-          sha256sum *.apk > SHA256SUMS.txt
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import shutil
+          from pathlib import Path
 
-      - name: Upload debug APK
+          variant = os.environ["APK_VARIANT"]
+          source = Path("app/build/outputs/apk") / variant
+          metadata = json.loads((source / "output-metadata.json").read_text())
+          [element] = metadata["elements"]
+          destination = Path("dist/ci")
+          destination.mkdir(parents=True, exist_ok=True)
+          name = f"AimeSimulator-{element['versionName']}-{variant}.apk"
+          apk = destination / name
+          shutil.copyfile(source / element["outputFile"], apk)
+          digest = hashlib.sha256(apk.read_bytes()).hexdigest()
+          (destination / "SHA256SUMS.txt").write_text(f"{digest}  {name}\n")
+          info = {
+              "versionName": element["versionName"],
+              "versionCode": element["versionCode"],
+              "applicationId": metadata["applicationId"],
+              "variant": variant,
+              "signing": "release" if variant == "release" else "temporary-debug",
+              "commit": os.environ["GITHUB_SHA"],
+              "ref": os.environ["GITHUB_REF"],
+              "runUrl": f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              "runAttempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "sha256": digest,
+          }
+          (destination / "build-info.json").write_text(json.dumps(info, indent=2) + "\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"### {name}\n\nVersion code: {element['versionCode']}\n\n")
+              summary.write(f"Commit: `{info['commit']}`\n\nSHA-256: `{digest}`\n\n")
+              summary.write("Download the APK and verification files from this run's Artifacts. This CI build does not create a GitHub Release.\n")
+          PY
+          "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --verbose --print-certs dist/ci/*.apk > dist/ci/SIGNATURE.txt
+          cat dist/ci/SIGNATURE.txt
+
+      - name: Upload CI APK
         uses: actions/upload-artifact@v6
         with:
-          name: AimeSimulator-main-${{ github.run_number }}-${{ github.run_attempt }}
+          name: AimeSimulator-${{ steps.build.outputs.variant }}-${{ github.run_number }}-${{ github.run_attempt }}
           path: dist/ci/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload reports on failure
-        if: failure()
+      - name: Upload test and lint reports
+        if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: AimeSimulator-main-reports-${{ github.run_number }}-${{ github.run_attempt }}
+          name: AimeSimulator-reports-${{ github.run_number }}-${{ github.run_attempt }}
           path: app/build/reports/
           if-no-files-found: ignore
           retention-days: 14

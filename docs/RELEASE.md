@@ -4,10 +4,10 @@
 
 ## 工作流
 
-- `Android CI`：在 `main` push 或手动触发时运行单元测试、lint、debug APK 构建、KernelSU 模块打包与产物检查，并保留测试 APK Artifact。
+- `Android CI`：在 `main` push、面向主线的 PR 或手动触发时运行 Android 与诊断工具测试、Lint、Debug 构建、KernelSU 模块打包与产物检查。在 `main` 上推送或手动运行时，额外使用下列正式签名 Secrets 构建 Release APK；PR 和其他分支只生成临时 debug 签名 APK。
 - `Android Release`：在推送与 `versionName` 一致的 `v版本号` 标签时构建 release APK，验证 APK 签名与 SHA-256，并创建或更新对应的 GitHub Release。
 
-实验分支和实验 APK 不进入托管构建或 GitHub Release。Actions 中的 debug Artifact 只用于安装测试；正式分发使用 `Android Release` 生成的固定签名 APK。
+主线 CI 的签名 APK 带 `-ci.<运行编号>.<提交短哈希>` 后缀，仅作为 Actions Artifact 供测试，不创建或更新 GitHub Release。产物同时包含 SHA-256、签名证书信息和构建元数据。正式分发仍由 `Android Release` 标签流程完成；临时签名文件在 CI 签名构建后清理。
 
 ## Repository Secrets
 
