@@ -50,12 +50,13 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "24"
 
       - name: Test diagnostic tools
+        timeout-minutes: 2
         run: |
           python3 -m unittest discover -s tools/hcef-lab/test -p 'test_*.py'
-          node --test tools/hinata-diagnostics/*.test.mjs
+          node --test --test-timeout=15000 tools/hinata-diagnostics/*.test.mjs
 
       - name: Install Android build packages
         run: |
