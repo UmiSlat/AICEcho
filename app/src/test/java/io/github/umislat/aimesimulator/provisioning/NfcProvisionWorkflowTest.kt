@@ -27,14 +27,17 @@ class NfcProvisionWorkflowTest {
         .toByteArray()
     private inner class Backend : NfcProvisionWorkflow.Backend {
         var current = original.copyOf()
+        var domain = NfcStorageDomain.CE
+        val restorePaths = mutableListOf<String>()
         val calls = mutableListOf<String>()
         var cancelled = false
         var uncertain = false
         var snapshotUnknown = false
-        override fun snapshot(): ByteArray {
+        var domainChangesOnRestore = false
+        override fun snapshot(): NfcProvisionWorkflow.Baseline {
             calls += "snapshot"
             if (snapshotUnknown) throw NfcProvisionWorkflow.UncertainOperation()
-            return current.copyOf()
+            return NfcProvisionWorkflow.Baseline(NfcProvisionPlan.BaselineSource.FILE, current.copyOf(), domain)
         }
         override fun metadata() = NfcBackupFixtures.metadata()
         override fun restore(archive: ByteArray): ProbeProcess.Result {
@@ -44,10 +47,14 @@ class NfcProvisionWorkflowTest {
                 TarArchiveInputStream(InflaterInputStream(ByteArrayInputStream(archive, header.size, archive.size - header.size))).use { tar ->
                     while (true) {
                         val entry = tar.nextEntry ?: break
-                        if (entry.name.endsWith("/dynamic_systemcode_nfcid2.xml")) current = tar.readBytes()
+                        if (entry.name.endsWith("/dynamic_systemcode_nfcid2.xml")) {
+                            restorePaths += entry.name
+                            current = tar.readBytes()
+                        }
                     }
                 }
             }
+            if (domainChangesOnRestore) domain = NfcStorageDomain.DE
             return ProbeProcess.Result(0, byteArrayOf(), uncertain)
         }
         override fun reload(): Boolean { calls += "reload"; return true }
@@ -78,6 +85,50 @@ class NfcProvisionWorkflowTest {
         assertTrue(workflow.canActivate())
         assertNull(workflow.plan)
         assertFalse(backend.calls.contains("restore"))
+    }
+
+    @Test fun filePreparationAndSelectiveRollbackRetainTheDeviceProtectedDomain() {
+        val backend = Backend().apply { domain = NfcStorageDomain.DE }
+        val flow = NfcProvisionWorkflow(backend, 10366)
+        assertEquals(NfcProvisionWorkflow.State.PREPARED, flow.prepare(token, idm) {}.state)
+        assertEquals(NfcStorageDomain.DE, flow.domain)
+        assertEquals(NfcStorageDomain.DE, flow.plan!!.domain)
+        assertEquals(NfcProvisionWorkflow.State.VERIFIED, flow.apply(token) {}.state)
+        assertEquals(NfcProvisionWorkflow.State.ROLLED_BACK, flow.rollback(token) {}.state)
+        assertEquals(listOf(NfcStorageDomain.DE.archivePath, NfcStorageDomain.DE.archivePath), backend.restorePaths)
+        assertArrayEquals(original, backend.current)
+    }
+
+    @Test fun changingTheFileDomainBlocksApplyResumeAndRollbackWithoutAnotherWrite() {
+        for (action in listOf("apply", "resume", "rollback")) {
+            val backend = Backend()
+            val flow = NfcProvisionWorkflow(backend, 10366)
+            flow.prepare(token, idm) {}
+            if (action == "rollback") flow.apply(token) {}
+            val writes = backend.restorePaths.size
+            backend.domain = NfcStorageDomain.DE
+            val result = when (action) {
+                "apply" -> flow.apply(token) {}
+                "resume" -> NfcProvisionWorkflow(backend, 10366).resume(token, flow.plan!!) {}
+                else -> flow.rollback(token) {}
+            }
+            assertEquals(action, NfcProvisionWorkflow.State.FAILED, result.state)
+            assertEquals("STORAGE_DOMAIN_CHANGED", result.detail)
+            assertEquals(writes, backend.restorePaths.size)
+            assertFalse(flow.canActivate())
+        }
+    }
+
+    @Test fun aDomainChangeDuringFileRestoreIsNotVerifiedAsSuccess() {
+        val backend = Backend()
+        val flow = NfcProvisionWorkflow(backend, 10366)
+        flow.prepare(token, idm) {}
+        backend.domainChangesOnRestore = true
+        val result = flow.apply(token) {}
+        assertEquals(NfcProvisionWorkflow.State.UNKNOWN, result.state)
+        assertEquals("STORAGE_DOMAIN_CHANGED", result.detail)
+        assertFalse(flow.canActivate())
+        assertEquals(listOf(NfcStorageDomain.CE.archivePath), backend.restorePaths)
     }
 
     @Test fun missingRegistrationAsksForLegalInitialization() {

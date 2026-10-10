@@ -46,7 +46,7 @@ class NfcProvisionStoreTest {
         val file = File(folder.root, "nfc-provision-plan.json")
         val original = file.readText()
         for ((key, replacement) in listOf(
-            "version" to 3, "token" to "bad", "uid" to uid + 1,
+            "version" to 4, "token" to "bad", "uid" to uid + 1, "domain" to "unknown",
             "originalHash" to "0".repeat(64), "proposedHash" to "0".repeat(64),
             "oldSystemCode" to "4001", "nfcid2" to "012E998877665544",
             "proposed" to Base64.encodeToString("<services/>".toByteArray(), Base64.NO_WRAP)
@@ -86,12 +86,13 @@ class NfcProvisionStoreTest {
         store.save(savedPlan(uid), uid, 185)
         val file = File(folder.root, "nfc-provision-plan.json")
         val legacy = JSONObject(file.readText()).apply {
-            put("version", 1); remove("source"); remove("state"); remove("direction")
+            put("version", 1); remove("source"); remove("state"); remove("direction"); remove("domain")
         }
         file.writeText(legacy.toString())
         val saved = checkNotNull(store.read(uid))
         val plan = NfcProvisionStore.validate(saved, uid)
         assertEquals(NfcProvisionPlan.BaselineSource.FILE, plan.source)
+        assertEquals(NfcStorageDomain.CE, plan.domain)
         assertEquals(NfcProvisionWorkflow.State.PREPARED, NfcProvisionStore.checkpoint(saved, plan).state)
         assertFalse(plan.matchesOriginal(plan.originalXml() + "\n".toByteArray()))
     }
@@ -110,6 +111,47 @@ class NfcProvisionStoreTest {
         assertNull(store.read(uid))
     }
 
+    @Test fun currentPlansRetainTheirDomainThroughStoreAndOperationCheckpoints() {
+        val store = NfcProvisionStore(folder.root)
+        for (domain in NfcStorageDomain.entries) {
+            store.save(savedPlan(uid, domain), uid, 185)
+            store.mark("a".repeat(32), uid, 185, NfcProvisionWorkflow.State.CONFIRMING)
+            val saved = checkNotNull(store.read(uid))
+            assertEquals(domain.name, saved.getString("domain"))
+            val plan = NfcProvisionStore.validate(saved, uid)
+            assertEquals(domain, plan.domain)
+            assertEquals(domain, plan.rollbackAgainst(plan.proposedXml()).candidate!!.domain)
+        }
+    }
+
+    @Test fun versionTwoPlansReadAsHistoricalCeAndUpgradeWithoutChangingIdentityBytes() {
+        val store = NfcProvisionStore(folder.root)
+        val data = savedPlan(uid).apply { putString("source", "RUNTIME") }
+        store.save(data, uid, 185)
+        val file = File(folder.root, "nfc-provision-plan.json")
+        val legacy = JSONObject(file.readText()).apply { put("version", 2); remove("domain") }
+        file.writeText(legacy.toString())
+        val saved = checkNotNull(store.read(uid))
+        assertEquals("CE", saved.getString("domain"))
+        assertEquals("RUNTIME", saved.getString("source"))
+        assertArrayEquals(data.getByteArray("original"), saved.getByteArray("original"))
+        assertEquals(legacy.toString(), file.readText())
+        store.save(saved, uid, 185)
+        assertEquals(3, JSONObject(file.readText()).getInt("version"))
+        assertEquals("CE", JSONObject(file.readText()).getString("domain"))
+    }
+
+    @Test fun currentFormatPlansCannotLoseTheDomainAndSilentlyDefaultToCe() {
+        val store = NfcProvisionStore(folder.root)
+        store.save(savedPlan(uid, NfcStorageDomain.DE), uid, 185)
+        val file = File(folder.root, "nfc-provision-plan.json")
+        val original = JSONObject(file.readText())
+        original.remove("domain")
+        file.writeText(original.toString())
+        assertNull(store.read(uid))
+        assertEquals(original.toString(), file.readText())
+    }
+
     @Test @Config(sdk = [36]) fun silentAtomicRenameFailureIsNotReportedAsASavedPlan() {
         val store = NfcProvisionStore(folder.root)
         val data = savedPlan(uid)
@@ -121,15 +163,16 @@ class NfcProvisionStoreTest {
     }
 
     companion object {
-        fun savedPlan(uid: Int): Bundle {
+        internal fun savedPlan(uid: Int, domain: NfcStorageDomain = NfcStorageDomain.CE): Bundle {
             val original = ("<services><service component=\"${NfcProvisionPlan.Target.AIME.component}\" " +
                 "uid=\"$uid\" system-code=\"4000\" nfcid2=\"02FE010203040506\"/></services>").toByteArray()
             val plan = NfcProvisionPlan.prepare(original, RestoreProbeArchive.sha256(original),
                 NfcProvisionPlan.Target.AIME, uid, NfcProvisionPlan.Identity("4000", "02FE010203040506"),
-                NfcProvisionPlan.Identity("88B4", "012E102030405060"))
+                NfcProvisionPlan.Identity("88B4", "012E102030405060"), domain = domain)
             return Bundle().apply {
                 putString("token", "a".repeat(32)); putInt("uid", uid)
                 putString("nfcid2", plan.after.nfcid2)
+                putString("domain", domain.name)
                 putString("oldSystemCode", plan.before.systemCode); putString("oldNfcid2", plan.before.nfcid2)
                 putString("originalHash", plan.originalHash); putString("proposedHash", plan.proposedHash)
                 putByteArray("original", plan.originalXml()); putByteArray("proposed", plan.proposedXml())

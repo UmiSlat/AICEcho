@@ -74,6 +74,7 @@ class DeviceCapabilitiesActivityTest {
     }
 
     @Test fun kvAgentShowsLimitationAndProbeHasSeparateConfirmation() {
+        CardStore(app).setAdvancedMode(true)
         val controller = Robolectric.buildActivity(DeviceCapabilitiesActivity::class.java).setup()
         try {
             val activity = controller.get()
@@ -130,6 +131,7 @@ class DeviceCapabilitiesActivityTest {
     }
 
     @Test fun runtimeReadDoesNotRequireFullBackupAndCannotEnableProvisioning() {
+        CardStore(app).setAdvancedMode(true)
         val controller = Robolectric.buildActivity(DeviceCapabilitiesActivity::class.java).setup()
         try {
             val activity = controller.get()
@@ -151,6 +153,7 @@ class DeviceCapabilitiesActivityTest {
     }
 
     @Test fun dumpFallbackReportsEffectiveOnlyAndDoesNotClaimXmlPreview() {
+        CardStore(app).setAdvancedMode(true)
         val controller = Robolectric.buildActivity(DeviceCapabilitiesActivity::class.java).setup()
         try {
             val activity = controller.get()
@@ -174,6 +177,46 @@ class DeviceCapabilitiesActivityTest {
         assertFalse(ready.copy(pending = true).canInspectRuntime)
         assertFalse(ready.copy(snapshot = NfcSnapshotWorkflow.Result(NfcSnapshotWorkflow.State.UNKNOWN)).canInspectRuntime)
     }
+
+    @Test fun ordinaryChecksHideTechnicalRowsAndOptionalProbes() {
+        val controller = Robolectric.buildActivity(DeviceCapabilitiesActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val model = ViewModelProvider(activity)[ShizukuProbeModel::class.java]
+            (model.screen as MutableLiveData).value = ShizukuProbeModel.Screen(
+                connection = ShizukuProbeModel.Connection.READY, uid = 2000, bu = true,
+                aosp = capable, snapshotCandidate = true)
+            val visibleText = views(activity.findViewById(android.R.id.content)).filter(::visible)
+                .filterIsInstance<TextView>().map { it.text.toString() }.toList()
+            for (id in listOf(R.string.capability_service, R.string.capability_target, R.string.capability_snapshot,
+                R.string.capability_runtime, R.string.capability_restore, R.string.capability_verify,
+                R.string.capability_runtime_read, R.string.provision_diagnostics)) {
+                assertFalse("Technical item $id", visibleText.contains(activity.getString(id)))
+            }
+            assertTrue(visibleText.contains(activity.getString(R.string.capability_setup_available)))
+            assertTrue(visibleText.contains(activity.getString(R.string.capability_refresh)))
+            assertFalse(visibleText.any { it.contains(" / API ") })
+            assertTrue(app.getSharedPreferences("shizuku_nfc_snapshot", Context.MODE_PRIVATE).all.isEmpty())
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun advancedChecksShowDetailsDirectlyAndDoNotStartProbes() {
+        CardStore(app).setAdvancedMode(true)
+        val controller = Robolectric.buildActivity(DeviceCapabilitiesActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val all = views(activity.findViewById(android.R.id.content)).filter(::visible).toList()
+            assertTrue(all.filterIsInstance<TextView>().any { it.text == activity.getString(R.string.provision_diagnostics) })
+            assertTrue(visible(button(activity, R.string.capability_verify)))
+            assertTrue(visible(button(activity, R.string.capability_runtime_read)))
+            assertFalse(all.filterIsInstance<MaterialButton>().any { it.text == activity.getString(R.string.provision_diagnostics) })
+            assertTrue(app.getSharedPreferences("shizuku_nfc_snapshot", Context.MODE_PRIVATE).all.isEmpty())
+            assertTrue(app.getSharedPreferences("shizuku_nfc_provision", Context.MODE_PRIVATE).all.isEmpty())
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    private fun visible(view: View) = generateSequence(view) { it.parent as? View }
+        .all { it.visibility == View.VISIBLE }
 
     private fun button(activity: DeviceCapabilitiesActivity, title: Int) = views(activity.findViewById(android.R.id.content))
         .filterIsInstance<MaterialButton>().single { it.text == activity.getString(title) }

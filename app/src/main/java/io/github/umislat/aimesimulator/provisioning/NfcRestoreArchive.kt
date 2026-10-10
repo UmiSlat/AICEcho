@@ -5,22 +5,21 @@ import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.DeflaterOutputStream
 
-/** Fixed CE identity destination only. Building an archive neither submits nor authorizes restore. */
+/** One identity destination, bound to the captured domain. Building an archive does not submit it. */
 internal object NfcRestoreArchive {
     private const val PACKAGE = NfcSnapshotArchive.PACKAGE
-    private const val IDENTITY = "apps/$PACKAGE/f/dynamic_systemcode_nfcid2.xml"
+    fun forward(plan: NfcProvisionPlan, metadata: NfcBackupMetadata) = build(plan.proposedXml(), plan.domain, metadata)
+    fun rollback(replacement: NfcProvisionPlan.Replacement, metadata: NfcBackupMetadata) =
+        build(replacement.xml(), replacement.domain, metadata)
 
-    fun forward(plan: NfcProvisionPlan, metadata: NfcBackupMetadata) = build(plan.proposedXml(), metadata)
-    fun rollback(replacement: NfcProvisionPlan.Replacement, metadata: NfcBackupMetadata) = build(replacement.xml(), metadata)
-
-    private fun build(xml: ByteArray, metadata: NfcBackupMetadata): ByteArray {
+    private fun build(xml: ByteArray, domain: NfcStorageDomain, metadata: NfcBackupMetadata): ByteArray {
         NfcSnapshotArchive.validateXml(xml)
         val manifest = (listOf("1", PACKAGE, metadata.version.toString(), metadata.sdk.toString(), "", "0",
             metadata.certificates.size.toString()) + metadata.certificates.map(RestoreProbeArchive::hex))
             .joinToString("\n", postfix = "\n").toByteArray(Charsets.US_ASCII)
         val output = ByteArrayOutputStream()
         TarArchiveOutputStream(output, 512, "UTF-8").use { tar ->
-            for ((path, data) in listOf("apps/$PACKAGE/_manifest" to manifest, IDENTITY to xml)) {
+            for ((path, data) in listOf("apps/$PACKAGE/_manifest" to manifest, domain.archivePath to xml)) {
                 val entry = TarArchiveEntry(path).apply {
                     size = data.size.toLong()
                     mode = 384
@@ -42,7 +41,8 @@ internal object NfcRestoreArchive {
             DeflaterOutputStream(this).use { it.write(payload) }
         }.toByteArray().also {
             require(it.size <= 256 * 1024)
-            check(NfcSnapshotArchive.parse(it, metadata).xml.contentEquals(xml))
+            val parsed = NfcSnapshotArchive.parse(it, metadata)
+            check(parsed.domain == domain && parsed.xml.contentEquals(xml))
         }
     }
 }

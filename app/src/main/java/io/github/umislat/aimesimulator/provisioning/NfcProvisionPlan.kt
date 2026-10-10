@@ -13,7 +13,8 @@ internal class NfcProvisionPlan private constructor(
     val after: Identity,
     original: ByteArray,
     proposed: ByteArray,
-    val source: BaselineSource = BaselineSource.FILE
+    val source: BaselineSource = BaselineSource.FILE,
+    val domain: NfcStorageDomain = NfcStorageDomain.CE
 ) {
     enum class BaselineSource { FILE, RUNTIME }
 
@@ -40,7 +41,7 @@ internal class NfcProvisionPlan private constructor(
 
     /** Comparison fidelity follows the baseline source; hashes always identify the stored bytes. */
     class Replacement internal constructor(preimage: ByteArray, replacement: ByteArray,
-        val source: BaselineSource = BaselineSource.FILE) {
+        val source: BaselineSource = BaselineSource.FILE, val domain: NfcStorageDomain = NfcStorageDomain.CE) {
         private val preimage = preimage.copyOf()
         private val replacement = replacement.copyOf()
         val preimageHash = RestoreProbeArchive.sha256(this.preimage)
@@ -89,7 +90,7 @@ internal class NfcProvisionPlan private constructor(
         val verified = records(reverted)
         check(matchesRecord(verified[targetKey], previous, source))
         check(matchesRecords(verified.filterKeys { it != targetKey }, live.filterKeys { it != targetKey }, source))
-        return Rollback(RollbackCheck.CANDIDATE, Replacement(observation, reverted, source))
+        return Rollback(RollbackCheck.CANDIDATE, Replacement(observation, reverted, source, domain))
     }
 
     private data class RecordKey(val userId: Int, val component: String)
@@ -105,7 +106,8 @@ internal class NfcProvisionPlan private constructor(
         }
 
         fun prepare(baseline: ByteArray, baselineHash: String, target: Target, uid: Int,
-            expected: Identity, requested: Identity, source: BaselineSource = BaselineSource.FILE): NfcProvisionPlan {
+            expected: Identity, requested: Identity, source: BaselineSource = BaselineSource.FILE,
+            domain: NfcStorageDomain = NfcStorageDomain.CE): NfcProvisionPlan {
             val original = baseline.copyOf()
             require(baselineHash.matches(Regex("[0-9a-f]{64}")) && RestoreProbeArchive.sha256(original) == baselineHash)
             require(uid in 10000..99999)
@@ -123,7 +125,7 @@ internal class NfcProvisionPlan private constructor(
             val updated = LinkedHashMap(records).apply { put(key, changed) }
             val proposed = serialize(updated)
             check(records(proposed) == updated)
-            return NfcProvisionPlan(target, uid, expected, requested, original, proposed, source)
+            return NfcProvisionPlan(target, uid, expected, requested, original, proposed, source, domain)
         }
 
         private fun canonicalComponent(component: String): String {

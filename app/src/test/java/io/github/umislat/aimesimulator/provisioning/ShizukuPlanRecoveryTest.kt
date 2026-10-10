@@ -100,6 +100,23 @@ class ShizukuPlanRecoveryTest {
         }
     }
 
+    @Test fun savedDeviceProtectedPlanKeepsItsDomainInTheRemoteSessionAndScreen() {
+        val data = NfcProvisionStoreTest.savedPlan(app.applicationInfo.uid, NfcStorageDomain.DE)
+        NfcProvisionStore(app.noBackupFilesDir).save(data, app.applicationInfo.uid, 185)
+        val remote = Remote()
+        withModel(remote) { model ->
+            ready(model)
+            assertTrue(model.screen.value!!.canResumePlan)
+            model.resumePreviousPlan()
+            drain(model)
+            model.refresh()
+            drain(model)
+            assertEquals(NfcStorageDomain.DE, model.screen.value!!.provisionDomain)
+            assertEquals("DE", NfcProvisionStore(app.noBackupFilesDir).read(app.applicationInfo.uid)!!.getString("domain"))
+            assertEquals(0, remote.applies)
+        }
+    }
+
     @Test fun runtimeInspectionIsExplicitAndDoesNotWriteSnapshotOrProvisionJournal() {
         val remote = Remote()
         withModel(remote) { model ->
@@ -292,6 +309,7 @@ class ShizukuPlanRecoveryTest {
             putString("nfcid2", saved?.getString("nfcid2").orEmpty())
             putBoolean("hasPlan", saved != null)
             putString("source", saved?.getString("source") ?: "FILE")
+            putString("domain", saved?.getString("domain"))
         }
         override fun resumeNfcProvision(savedPlan: Bundle): Bundle {
             resumes++

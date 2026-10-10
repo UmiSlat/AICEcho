@@ -29,8 +29,9 @@ class NfcProvisionPlanTest {
         </services>
     """.trimIndent().toByteArray()
     private fun plan(raw: ByteArray = source,
-        baselineSource: NfcProvisionPlan.BaselineSource = NfcProvisionPlan.BaselineSource.FILE) =
-        NfcProvisionPlan.prepare(raw, RestoreProbeArchive.sha256(raw), target, 10366, oldId, newId, baselineSource)
+        baselineSource: NfcProvisionPlan.BaselineSource = NfcProvisionPlan.BaselineSource.FILE,
+        domain: NfcStorageDomain = NfcStorageDomain.CE) =
+        NfcProvisionPlan.prepare(raw, RestoreProbeArchive.sha256(raw), target, 10366, oldId, newId, baselineSource, domain)
     private fun records(xml: ByteArray): List<Map<String, String>> {
         val parser = Xml.newPullParser().apply { setInput(ByteArrayInputStream(xml), "UTF-8") }
         val records = mutableListOf<Map<String, String>>()
@@ -428,6 +429,23 @@ class NfcProvisionPlanTest {
         assertEquals("4002", records(restored)[1]["system-code"])
         assertEquals(records(source)[0], records(restored)[0])
         File("build/reports/nfc-provision").apply { mkdirs() }.resolve("rollback-merged.ab").writeBytes(archive)
+    }
+
+    @Test fun forwardAndMergedRollbackWriteExactlyTheCapturedDomainForBothSources() {
+        for (source in NfcProvisionPlan.BaselineSource.entries) for (domain in NfcStorageDomain.entries) {
+            val plan = plan(baselineSource = source, domain = domain)
+            val current = edited(plan.proposedXml(), "4001", "4002")
+            val rollback = checkNotNull(plan.rollbackAgainst(current).candidate)
+            assertEquals(domain, plan.domain)
+            assertEquals(domain, rollback.domain)
+            for ((archive, xml) in listOf(NfcRestoreArchive.forward(plan, NfcBackupFixtures.metadata()) to plan.proposedXml(),
+                NfcRestoreArchive.rollback(rollback, NfcBackupFixtures.metadata()) to rollback.xml())) {
+                assertEquals(listOf("apps/com.android.nfc/_manifest", domain.archivePath), archiveFiles(archive).keys.toList())
+                val parsed = NfcSnapshotArchive.parse(archive, NfcBackupFixtures.metadata())
+                assertEquals(domain, parsed.domain)
+                assertArrayEquals(xml, parsed.xml)
+            }
+        }
     }
 
     @Test fun optInAppSnapshotCanPlanOnlySyntheticLabChangeWithoutLosingOtherRecord() {

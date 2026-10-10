@@ -28,5 +28,8 @@ internal class NfcBackupMetadata(val version: Long, val sdk: Int, val certificat
 }
 
 internal class NfcBackupException(val reason: Reason) : IllegalStateException(reason.name) {
-    enum class Reason { EMPTY_BACKUP, ENCRYPTED_BACKUP, IDENTITY_MISSING, BACKUP_FAILED, UNSUPPORTED }
+    enum class Reason {
+        EMPTY_BACKUP, ENCRYPTED_BACKUP, IDENTITY_MISSING, BACKUP_FAILED, UNSUPPORTED,
+        STORAGE_DOMAIN_UNAVAILABLE, STORAGE_DOMAIN_CHANGED
+    }
 }

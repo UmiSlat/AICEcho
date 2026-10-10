@@ -16,7 +16,7 @@ internal object NfcSnapshotArchive {
     const val MAX_XML = 128 * 1024
     private const val PREFIX = "apps/$PACKAGE/"
     private const val IDENTITY = "dynamic_systemcode_nfcid2.xml"
-    class Parsed(val xml: ByteArray, val records: Int, val archiveHash: String) {
+    class Parsed(val xml: ByteArray, val records: Int, val archiveHash: String, val domain: NfcStorageDomain) {
         val identityHash: String get() = RestoreProbeArchive.sha256(xml)
     }
 
@@ -92,9 +92,11 @@ internal object NfcSnapshotArchive {
         require(hashes == expected.signerHashes)
         val identities = files.keys.filter { it.substringAfterLast('/') == IDENTITY }
         if (identities.isEmpty()) throw NfcBackupException(NfcBackupException.Reason.IDENTITY_MISSING)
-        require(identities == listOf(PREFIX + "f/" + IDENTITY))
-        val xml = checkNotNull(files[PREFIX + "f/" + IDENTITY])
-        return Parsed(xml, validateXml(xml), RestoreProbeArchive.sha256(raw))
+        require(identities.size == 1)
+        val path = identities.single()
+        val domain = NfcStorageDomain.entries.single { it.archivePath == path }
+        val xml = checkNotNull(files[path])
+        return Parsed(xml, validateXml(xml), RestoreProbeArchive.sha256(raw), domain)
     }
 
     fun validateXml(raw: ByteArray): Int {

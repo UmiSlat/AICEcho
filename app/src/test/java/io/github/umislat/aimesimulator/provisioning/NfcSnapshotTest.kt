@@ -54,6 +54,7 @@ class NfcSnapshotTest {
         val parsed = NfcSnapshotArchive.parse(raw, metadata)
         assertArrayEquals(xml, parsed.xml)
         assertEquals(1, parsed.records)
+        assertEquals(NfcStorageDomain.CE, parsed.domain)
         assertEquals(RestoreProbeArchive.sha256(raw), parsed.archiveHash)
         assertEquals(RestoreProbeArchive.sha256(xml), parsed.identityHash)
     }
@@ -68,6 +69,22 @@ class NfcSnapshotTest {
         val base = listOf(prefix + "_manifest" to manifest(), identity to xml)
         rejects(archive(base + (identity to xml)))
         rejects(archive(base + (prefix + "d_f/dynamic_systemcode_nfcid2.xml" to xml)))
+    }
+
+    @Test fun readsTheSingleDeviceProtectedIdentityWithoutChangingItsBytes() {
+        val raw = archive(listOf(prefix + "_manifest" to manifest(), NfcStorageDomain.DE.archivePath to xml))
+        val parsed = NfcSnapshotArchive.parse(raw, metadata)
+        assertEquals(NfcStorageDomain.DE, parsed.domain)
+        assertArrayEquals(xml, parsed.xml)
+        assertEquals(1, parsed.records)
+        assertEquals(RestoreProbeArchive.sha256(raw), parsed.archiveHash)
+    }
+
+    @Test fun identityInAnyOtherAcceptedArchiveDomainIsNotTreatedAsCeOrDeFiles() {
+        for (domain in listOf("r", "d_r", "sp", "d_sp", "db", "d_db", "ef")) {
+            rejects(archive(listOf(prefix + "_manifest" to manifest(),
+                prefix + domain + "/dynamic_systemcode_nfcid2.xml" to xml)))
+        }
     }
 
     @Test fun rejectsForeignPackagesTraversalAndUnreviewedDomains() {
@@ -228,6 +245,7 @@ class NfcSnapshotTest {
 
     private fun data() = Bundle().apply {
         putString("token", token); putByteArray("xml", xml)
+        putString("domain", "CE")
         putString("identityHash", RestoreProbeArchive.sha256(xml)); putInt("records", 1)
         putString("archiveHash", "f".repeat(64)); putInt("boot", 4)
         putLong("elapsed", 100); putLong("wall", 1000); putString("fingerprint", "build")
@@ -254,10 +272,29 @@ class NfcSnapshotTest {
         for (changed in listOf(data().apply { putString("identityHash", "0".repeat(64)) },
             data().apply { putInt("records", 2) }, data().apply { putInt("boot", 5) },
             data().apply { putLong("elapsed", 200) }, data().apply { putString("fingerprint", "other") },
-            data().apply { putString("token", "b".repeat(32)) })) {
+            data().apply { putString("token", "b".repeat(32)) }, data().apply { remove("domain") },
+            data().apply { putString("domain", "UNKNOWN") })) {
             assertThrows(Exception::class.java) { store.save(changed, token, 4, 100, "build") }
             assertEquals(saved, store.read())
         }
+    }
+
+    @Test @Config(shadows = [PosixAtomicFileShadow::class])
+    fun savedSnapshotsKeepTheirDomainAndReadHistoricalCeSnapshots() {
+        val store = NfcSnapshotStore(folder.root)
+        for (domain in NfcStorageDomain.entries) {
+            val saved = store.save(data().apply { putString("domain", domain.name) }, token, 4, 100, "build")
+            assertEquals(domain, saved.domain)
+            assertEquals(saved, store.read())
+        }
+        val file = File(folder.root, "nfc-snapshot.json")
+        val legacy = JSONObject(file.readText()).apply { put("version", 1); remove("domain") }
+        file.writeText(legacy.toString())
+        assertEquals(NfcStorageDomain.CE, store.read()!!.domain)
+        assertEquals(legacy.toString(), file.readText())
+        legacy.put("version", 2)
+        file.writeText(legacy.toString())
+        assertNull(store.read())
     }
 
     @Test fun corruptOrOversizeStoreIsNotUsable() {

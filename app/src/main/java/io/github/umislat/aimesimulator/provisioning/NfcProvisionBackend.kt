@@ -15,19 +15,26 @@ internal class NfcProvisionBackend(private val context: Context,
         val capabilities = AospBackupCapabilities.inspect(context)
         check(capabilities.canExport)
         return try {
-            NfcProvisionWorkflow.Baseline(NfcProvisionPlan.BaselineSource.RUNTIME, runtimeSnapshot())
-        } catch (failure: NfcRuntimeBaseline.Failure) {
+            runtimeSnapshot()
+        } catch (failure: Exception) {
+            if (failure !is NfcRuntimeBaseline.Failure && (failure !is NfcBackupException ||
+                failure.reason != NfcBackupException.Reason.STORAGE_DOMAIN_UNAVAILABLE)) throw failure
             if (capabilities.keyValueOnly && !keyValueExportVerified()) throw failure
-            NfcProvisionWorkflow.Baseline(NfcProvisionPlan.BaselineSource.FILE, snapshot())
+            snapshot()
         }
     }
 
-    override fun runtimeSnapshot(): ByteArray {
+    override fun runtimeSnapshot(): NfcProvisionWorkflow.Baseline {
         check(Process.myUid() == 2000)
         val deadline = SystemClock.elapsedRealtime() + if (afterReload) 10_000 else 0
         while (true) {
             try {
-                return NfcRuntimeBaseline.capture(context).also { afterReload = false }
+                val domain = NfcStorageDomain.inspect(context)
+                val xml = NfcRuntimeBaseline.capture(context)
+                if (NfcStorageDomain.inspect(context) != domain)
+                    throw NfcBackupException(NfcBackupException.Reason.STORAGE_DOMAIN_CHANGED)
+                afterReload = false
+                return NfcProvisionWorkflow.Baseline(NfcProvisionPlan.BaselineSource.RUNTIME, xml, domain)
             } catch (failure: NfcRuntimeBaseline.Failure) {
                 if (SystemClock.elapsedRealtime() >= deadline || failure.reason !in setOf(
                     NfcRuntimeBaseline.Reason.RUNTIME_BASELINE_CACHE_EMPTY,
@@ -39,14 +46,15 @@ internal class NfcProvisionBackend(private val context: Context,
         }
     }
 
-    override fun snapshot(): ByteArray {
+    override fun snapshot(): NfcProvisionWorkflow.Baseline {
         check(Process.myUid() == 2000)
         val token = RestoreProbeArchive.hex(ByteArray(16).also { java.security.SecureRandom().nextBytes(it) })
         val result = NfcSnapshotWorkflow(exporter).run(token) {}
         if (result.state == NfcSnapshotWorkflow.State.UNKNOWN) throw NfcProvisionWorkflow.UncertainOperation()
         if (result.state != NfcSnapshotWorkflow.State.CAPTURED) throw NfcBackupException(
             runCatching { NfcBackupException.Reason.valueOf(result.detail) }.getOrDefault(NfcBackupException.Reason.BACKUP_FAILED))
-        return checkNotNull(result.capture).parsed.xml.copyOf()
+        val parsed = checkNotNull(result.capture).parsed
+        return NfcProvisionWorkflow.Baseline(NfcProvisionPlan.BaselineSource.FILE, parsed.xml.copyOf(), parsed.domain)
     }
 
     override fun metadata() = NfcBackupMetadata.read(context)

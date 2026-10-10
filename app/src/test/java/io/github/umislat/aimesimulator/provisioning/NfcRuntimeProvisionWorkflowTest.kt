@@ -28,18 +28,20 @@ class NfcRuntimeProvisionWorkflowTest {
 
     private inner class Backend : NfcProvisionWorkflow.Backend {
         var current = original.copyOf()
+        var domain = NfcStorageDomain.CE
+        val restorePaths = mutableListOf<String>()
         var disk = original.copyOf()
         var cancelled = false
         var uncertain = false
         var reloadSuccess = true
         var readFailure = false
         val calls = mutableListOf<String>()
-        override fun snapshot(): ByteArray = error("File export must not be used for a runtime plan")
-        override fun baseline() = NfcProvisionWorkflow.Baseline(NfcProvisionPlan.BaselineSource.RUNTIME, runtimeSnapshot())
-        override fun runtimeSnapshot(): ByteArray {
+        override fun snapshot(): NfcProvisionWorkflow.Baseline = error("File export must not be used for a runtime plan")
+        override fun baseline() = runtimeSnapshot()
+        override fun runtimeSnapshot(): NfcProvisionWorkflow.Baseline {
             calls += "read"
             check(!readFailure)
-            return current.copyOf()
+            return NfcProvisionWorkflow.Baseline(NfcProvisionPlan.BaselineSource.RUNTIME, current.copyOf(), domain)
         }
         override fun metadata() = NfcBackupFixtures.metadata()
         override fun restore(archive: ByteArray): ProbeProcess.Result {
@@ -49,7 +51,10 @@ class NfcRuntimeProvisionWorkflowTest {
                 TarArchiveInputStream(InflaterInputStream(ByteArrayInputStream(archive, header.size, archive.size - header.size))).use { tar ->
                     while (true) {
                         val entry = tar.nextEntry ?: break
-                        if (entry.name.endsWith("/dynamic_systemcode_nfcid2.xml")) disk = tar.readBytes()
+                        if (entry.name.endsWith("/dynamic_systemcode_nfcid2.xml")) {
+                            restorePaths += entry.name
+                            disk = tar.readBytes()
+                        }
                     }
                 }
             }
@@ -96,6 +101,57 @@ class NfcRuntimeProvisionWorkflowTest {
         backend.disk = backend.disk.toString(Charsets.UTF_8).replace("4001", "4002").toByteArray()
         assertEquals(NfcProvisionWorkflow.State.CONFLICT, flow.reload(token) {}.state)
         assertFalse(flow.canActivate())
+    }
+
+    @Test fun deviceProtectedRuntimeCycleRetainsItsDomainAcrossSavedCheckpointsAndRollback() {
+        val backend = Backend().apply { domain = NfcStorageDomain.DE }
+        val flow = NfcProvisionWorkflow(backend, 10366)
+        assertEquals(NfcProvisionWorkflow.State.PREPARED, flow.prepare(token, idm) {}.state)
+        assertEquals(NfcStorageDomain.DE, flow.plan!!.domain)
+        assertEquals(NfcProvisionWorkflow.State.AWAITING_RELOAD, flow.apply(token) {}.state)
+        val saved = save(flow)
+        assertEquals("DE", saved.getString("domain"))
+        val plan = NfcProvisionStore.validate(saved, 10366)
+        val next = NfcProvisionWorkflow(backend, 10366)
+        assertEquals(NfcProvisionWorkflow.State.AWAITING_RELOAD,
+            next.resume(token, plan, NfcProvisionStore.checkpoint(saved, plan)) {}.state)
+        assertEquals(NfcProvisionWorkflow.State.RELOADED, next.reload(token) {}.state)
+        assertTrue(next.canActivate())
+        assertEquals(NfcProvisionWorkflow.State.AWAITING_RELOAD, next.rollback(token) {}.state)
+        assertEquals(NfcStorageDomain.DE, next.checkpoint().rollback!!.domain)
+        val rollbackSaved = save(next)
+        val rollbackPlan = NfcProvisionStore.validate(rollbackSaved, 10366)
+        assertEquals(NfcStorageDomain.DE, NfcProvisionStore.checkpoint(rollbackSaved, rollbackPlan).rollback!!.domain)
+        assertEquals(NfcProvisionWorkflow.State.RELOADED, next.reload(token) {}.state)
+        assertFalse(next.canActivate())
+        assertEquals(listOf(NfcStorageDomain.DE.archivePath, NfcStorageDomain.DE.archivePath), backend.restorePaths)
+        assertTrue(next.plan!!.matchesOriginal(backend.disk))
+    }
+
+    @Test fun runtimeDomainDriftBlocksApplyAndFreshSessionRecovery() {
+        val backend = Backend()
+        val flow = NfcProvisionWorkflow(backend, 10366)
+        flow.prepare(token, idm) {}
+        backend.domain = NfcStorageDomain.DE
+        assertEquals(NfcProvisionWorkflow.State.FAILED, flow.apply(token) {}.state)
+        assertEquals("STORAGE_DOMAIN_CHANGED", flow.result.detail)
+        val next = NfcProvisionWorkflow(backend, 10366)
+        assertEquals(NfcProvisionWorkflow.State.FAILED, next.resume(token, flow.plan!!) {}.state)
+        assertEquals("STORAGE_DOMAIN_CHANGED", next.result.detail)
+        assertTrue(backend.restorePaths.isEmpty())
+    }
+
+    @Test fun runtimeDomainDriftAfterRestoreCannotEnableTheCard() {
+        val backend = Backend()
+        val flow = NfcProvisionWorkflow(backend, 10366)
+        flow.prepare(token, idm) {}
+        flow.apply(token) {}
+        backend.domain = NfcStorageDomain.DE
+        val result = flow.reload(token) {}
+        assertEquals(NfcProvisionWorkflow.State.UNKNOWN, result.state)
+        assertEquals("STORAGE_DOMAIN_CHANGED", result.detail)
+        assertFalse(flow.canActivate())
+        assertEquals(listOf(NfcStorageDomain.CE.archivePath), backend.restorePaths)
     }
 
     @Test fun reloadOrFreshReadFailureNeverEnablesEmulation() {
@@ -241,6 +297,7 @@ class NfcRuntimeProvisionWorkflowTest {
         val data = Bundle().apply {
             putString("token", token); putInt("uid", 10366); putString("nfcid2", idm)
             putString("source", plan.source.name); putString("state", checkpoint.state.name)
+            putString("domain", plan.domain.name)
             putString("direction", checkpoint.direction.name)
             putString("oldSystemCode", plan.before.systemCode); putString("oldNfcid2", plan.before.nfcid2)
             putString("originalHash", plan.originalHash); putString("proposedHash", plan.proposedHash)

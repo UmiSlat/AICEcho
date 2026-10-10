@@ -11,6 +11,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModelProvider
 import io.github.umislat.aimesimulator.provisioning.ShizukuProbeModel
 import io.github.umislat.aimesimulator.provisioning.NfcProvisionWorkflow
+import io.github.umislat.aimesimulator.provisioning.NfcStorageDomain
 import org.robolectric.shadows.ShadowDialog
 import androidx.appcompat.app.AlertDialog
 import io.github.umislat.aimesimulator.R
@@ -251,7 +252,8 @@ class ShizukuProvisioningActivityTest {
             val model = ViewModelProvider(activity)[ShizukuProbeModel::class.java]
             (model.screen as MutableLiveData).value = ShizukuProbeModel.Screen(
                 connection = ShizukuProbeModel.Connection.READY, uid = 2000, bu = true,
-                snapshotCandidate = true, provisionCandidate = true, savedPlanAvailable = true)
+                snapshotCandidate = true, provisionCandidate = true, savedPlanAvailable = true,
+                savedPlanRequiresResume = true)
             val button = views(activity.findViewById(android.R.id.content)).filterIsInstance<MaterialButton>()
                 .single { it.text == activity.getString(R.string.shizuku_card_resume) }
             assertEquals(View.VISIBLE, button.visibility)
@@ -287,10 +289,91 @@ class ShizukuProvisioningActivityTest {
             assertFalse(visible.contains(activity.getString(R.string.shizuku_snapshot_capture)))
             assertFalse(visible.contains(activity.getString(R.string.shizuku_card_apply)))
             assertTrue(visible.contains(activity.getString(R.string.shizuku_card_activate)))
-            assertTrue(visible.contains(activity.getString(R.string.shizuku_card_reload)))
-            assertTrue(visible.contains(activity.getString(R.string.device_capabilities)))
+            assertFalse(visible.contains(activity.getString(R.string.shizuku_card_reload)))
+            assertFalse(visible.contains(activity.getString(R.string.device_capabilities)))
+            assertFalse(visible.any { it.startsWith(activity.getString(R.string.shizuku_card_source_file)) })
         } finally { controller.pause().stop().destroy() }
     }
+
+    @Test fun storageDomainIsVisibleOnlyInAdvancedMode() {
+        val app = RuntimeEnvironment.getApplication()
+        for (advanced in listOf(false, true)) {
+            CardStore(app).setAdvancedMode(advanced)
+            val controller = Robolectric.buildActivity(ShizukuProvisioningActivity::class.java).setup()
+            try {
+                val activity = controller.get()
+                val model = ViewModelProvider(activity)[ShizukuProbeModel::class.java]
+                (model.screen as MutableLiveData).value = ShizukuProbeModel.Screen(
+                    planSaved = true, provisionDomain = NfcStorageDomain.DE,
+                    provision = NfcProvisionWorkflow.Result(NfcProvisionWorkflow.State.PREPARED, "a".repeat(32)))
+                val source = views(activity.findViewById(android.R.id.content)).filterIsInstance<TextView>()
+                    .single { it.text.startsWith(activity.getString(R.string.shizuku_card_source_file)) }
+                assertEquals(advanced, source.text.contains(activity.getString(R.string.shizuku_card_storage_de)))
+                assertEquals(advanced, visible(source))
+                assertFalse(source.text.contains(activity.getString(R.string.shizuku_card_storage_ce)))
+            } finally { controller.pause().stop().destroy() }
+        }
+    }
+
+    @Test fun ordinarySetupShowsTheCurrentStepInsteadOfAllActions() {
+        val card = requireNotNull(CardProfile.create("Synthetic", "012E112233445566"))
+        CardStore(RuntimeEnvironment.getApplication()).apply { put(card); select(card.profileId) }
+        val controller = Robolectric.buildActivity(ShizukuProvisioningActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val model = ViewModelProvider(activity)[ShizukuProbeModel::class.java]
+            val steps = linkedMapOf(
+                NfcProvisionWorkflow.State.IDLE to R.string.shizuku_card_prepare,
+                NfcProvisionWorkflow.State.NEEDS_BASELINE to R.string.shizuku_card_initialize,
+                NfcProvisionWorkflow.State.PREPARED to R.string.shizuku_card_apply,
+                NfcProvisionWorkflow.State.AWAITING_RELOAD to R.string.shizuku_card_reload,
+                NfcProvisionWorkflow.State.RELOADED to R.string.shizuku_card_activate,
+                NfcProvisionWorkflow.State.ALREADY_PRESENT to R.string.shizuku_card_activate
+            )
+            val primaryLabels = (steps.values + R.string.shizuku_connect).toSet().map(activity::getString)
+            for ((state, next) in steps) {
+                (model.screen as MutableLiveData).value = ShizukuProbeModel.Screen(
+                    connection = ShizukuProbeModel.Connection.READY, uid = 2000, bu = true,
+                    provisionCandidate = true, planSaved = state != NfcProvisionWorkflow.State.IDLE,
+                    provisionIdm = card.idm,
+                    canActivate = state in setOf(NfcProvisionWorkflow.State.RELOADED, NfcProvisionWorkflow.State.ALREADY_PRESENT),
+                    provision = NfcProvisionWorkflow.Result(state, "a".repeat(32)))
+                val buttons = views(activity.findViewById(android.R.id.content)).filterIsInstance<MaterialButton>()
+                    .filter { visible(it) && it.text.toString() in primaryLabels }.toList()
+                assertEquals("Primary actions for $state", listOf(activity.getString(next)), buttons.map { it.text.toString() })
+                assertTrue("Next action for $state", buttons.single().isEnabled)
+            }
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun advancedDiagnosticsAreVisibleWithoutAnotherDisclosureButton() {
+        CardStore(RuntimeEnvironment.getApplication()).setAdvancedMode(true)
+        val controller = Robolectric.buildActivity(ShizukuProvisioningActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val all = views(activity.findViewById(android.R.id.content)).filter(::visible).toList()
+            assertTrue(all.filterIsInstance<TextView>().any { it.text == activity.getString(R.string.provision_diagnostics) })
+            assertFalse(all.filterIsInstance<MaterialButton>().any { it.text == activity.getString(R.string.provision_diagnostics) })
+            assertTrue(all.filterIsInstance<MaterialButton>().any { it.text == activity.getString(R.string.device_capabilities) })
+            assertTrue(all.filterIsInstance<MaterialButton>().any { it.text == activity.getString(R.string.shizuku_test) })
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun ordinarySetupDoesNotHideBlockingDiagnosticOperations() {
+        val controller = Robolectric.buildActivity(ShizukuProvisioningActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val model = ViewModelProvider(activity)[ShizukuProbeModel::class.java]
+            for (state in listOf(ShizukuProbeModel.Screen(pending = true), ShizukuProbeModel.Screen(snapshotPending = true))) {
+                (model.screen as MutableLiveData).value = state
+                assertTrue(views(activity.findViewById(android.R.id.content)).filter(::visible).filterIsInstance<TextView>()
+                    .any { it.text == activity.getString(R.string.shizuku_pending) })
+            }
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    private fun visible(view: View) = generateSequence(view) { it.parent as? View }
+        .all { it.visibility == View.VISIBLE }
 
     private fun views(view: View): Sequence<View> = sequence {
         yield(view)

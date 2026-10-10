@@ -13,14 +13,15 @@ internal class NfcProvisionWorkflow(private val backend: Backend, private val ow
             State.VERIFYING, State.RELOADING, State.ROLLING_BACK)
     }
     interface Backend {
-        fun snapshot(): ByteArray
-        fun runtimeSnapshot(): ByteArray = error("Runtime baseline unavailable")
-        fun baseline() = Baseline(NfcProvisionPlan.BaselineSource.FILE, snapshot())
+        fun snapshot(): Baseline
+        fun runtimeSnapshot(): Baseline = error("Runtime baseline unavailable")
+        fun baseline() = snapshot()
         fun metadata(): NfcBackupMetadata
         fun restore(archive: ByteArray): ProbeProcess.Result
         fun reload(): Boolean
     }
-    class Baseline(val source: NfcProvisionPlan.BaselineSource, val xml: ByteArray)
+    class Baseline(val source: NfcProvisionPlan.BaselineSource, val xml: ByteArray,
+        val domain: NfcStorageDomain = NfcStorageDomain.CE)
     enum class Direction { FORWARD, ROLLBACK }
     class Checkpoint(val state: State = State.PREPARED, val direction: Direction = Direction.FORWARD,
         val rollback: NfcProvisionPlan.Replacement? = null)
@@ -34,13 +35,20 @@ internal class NfcProvisionWorkflow(private val backend: Backend, private val ow
     private var rollbackVerified = false
     var source = NfcProvisionPlan.BaselineSource.FILE
         private set
+    var domain: NfcStorageDomain? = null
+        private set
     private var direction = Direction.FORWARD
     private var rollbackReplacement: NfcProvisionPlan.Replacement? = null
 
     fun checkpoint() = Checkpoint(result.state, direction, rollbackReplacement)
-    private fun snapshot() = when (source) {
-        NfcProvisionPlan.BaselineSource.FILE -> backend.snapshot()
-        NfcProvisionPlan.BaselineSource.RUNTIME -> backend.runtimeSnapshot()
+    private fun snapshot(): ByteArray {
+        val observation = when (source) {
+            NfcProvisionPlan.BaselineSource.FILE -> backend.snapshot()
+            NfcProvisionPlan.BaselineSource.RUNTIME -> backend.runtimeSnapshot()
+        }
+        check(observation.source == source)
+        if (observation.domain != domain) throw NfcBackupException(NfcBackupException.Reason.STORAGE_DOMAIN_CHANGED)
+        return observation.xml
     }
 
     fun prepare(token: String, idm: String, report: (Result) -> Unit): Result {
@@ -52,10 +60,12 @@ internal class NfcProvisionWorkflow(private val backend: Backend, private val ow
         rollbackVerified = false
         direction = Direction.FORWARD
         rollbackReplacement = null
+        domain = null
         requestedIdm = desired.nfcid2
         return step(State.PREPARING, token, report) {
             val baseline = backend.baseline()
             source = baseline.source
+            domain = baseline.domain
             val xml = baseline.xml
             val before = NfcProvisionPlan.currentIdentity(xml, NfcProvisionPlan.Target.AIME, ownerUid)
                 ?: return@step State.NEEDS_BASELINE
@@ -63,7 +73,7 @@ internal class NfcProvisionWorkflow(private val backend: Backend, private val ow
                 return@step State.ALREADY_PRESENT
             }
             plan = NfcProvisionPlan.prepare(xml, RestoreProbeArchive.sha256(xml),
-                NfcProvisionPlan.Target.AIME, ownerUid, before, desired, source)
+                NfcProvisionPlan.Target.AIME, ownerUid, before, desired, source, baseline.domain)
             State.PREPARED
         }
     }
@@ -76,6 +86,7 @@ internal class NfcProvisionWorkflow(private val backend: Backend, private val ow
         plan = saved
         requestedIdm = saved.after.nfcid2
         source = saved.source
+        domain = saved.domain
         direction = checkpoint.direction
         rollbackReplacement = checkpoint.rollback
         rollbackVerified = false

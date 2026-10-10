@@ -11,7 +11,8 @@ import java.io.File
 internal class NfcSnapshotStore(directory: File) {
     private val file = AtomicFile(File(directory, "nfc-snapshot.json"))
     data class Summary(val token: String, val hash: String, val records: Int, val bytes: Int,
-        val boot: Int, val elapsed: Long, val wall: Long, val fingerprint: String) {
+        val boot: Int, val elapsed: Long, val wall: Long, val fingerprint: String,
+        val domain: NfcStorageDomain) {
         fun recent(currentBoot: Int, now: Long, currentFingerprint: String): Boolean =
             currentBoot >= 0 && currentBoot == boot && fingerprint == currentFingerprint &&
                 now >= elapsed && now - elapsed <= 300_000
@@ -20,6 +21,7 @@ internal class NfcSnapshotStore(directory: File) {
     @Synchronized fun save(data: Bundle, token: String, boot: Int, elapsed: Long, fingerprint: String): Summary {
         require(RestoreProbeArchive.validToken(token) && token == data.getString("token"))
         val xml = checkNotNull(data.getByteArray("xml"))
+        val domain = NfcStorageDomain.valueOf(checkNotNull(data.getString("domain")))
         val count = NfcSnapshotArchive.validateXml(xml)
         val hash = RestoreProbeArchive.sha256(xml)
         require(hash == data.getString("identityHash") && count == data.getInt("records", -1))
@@ -29,7 +31,7 @@ internal class NfcSnapshotStore(directory: File) {
         val archiveHash = data.getString("archiveHash").orEmpty()
         require(archiveHash.matches(Regex("[0-9a-f]{64}")))
         val wall = data.getLong("wall", -1).also { require(it >= 0) }
-        val json = JSONObject().put("version", 1).put("token", token).put("boot", boot)
+        val json = JSONObject().put("version", 2).put("token", token).put("boot", boot).put("domain", domain.name)
             .put("elapsed", captured).put("wall", wall).put("fingerprint", fingerprint)
             .put("archiveHash", archiveHash).put("identityHash", hash).put("records", count)
             .put("xml", Base64.encodeToString(xml, Base64.NO_WRAP))
@@ -38,7 +40,7 @@ internal class NfcSnapshotStore(directory: File) {
             output.write(json.toString().toByteArray(Charsets.UTF_8))
             file.finishWrite(output)
         } catch (error: Exception) { file.failWrite(output); throw error }
-        return Summary(token, hash, count, xml.size, boot, captured, wall, fingerprint)
+        return Summary(token, hash, count, xml.size, boot, captured, wall, fingerprint, domain)
     }
 
     @Synchronized fun read(): Summary? = runCatching {
@@ -54,7 +56,9 @@ internal class NfcSnapshotStore(directory: File) {
             out.toByteArray()
         }
         val json = JSONObject(raw.toString(Charsets.UTF_8))
-        require(json.getInt("version") == 1 && RestoreProbeArchive.validToken(json.getString("token")))
+        val version = json.getInt("version")
+        require(version in 1..2 && RestoreProbeArchive.validToken(json.getString("token")))
+        val domain = if (version == 1) NfcStorageDomain.CE else NfcStorageDomain.valueOf(json.getString("domain"))
         val xml = Base64.decode(json.getString("xml"), Base64.NO_WRAP)
         val count = NfcSnapshotArchive.validateXml(xml)
         val hash = RestoreProbeArchive.sha256(xml)
@@ -62,7 +66,7 @@ internal class NfcSnapshotStore(directory: File) {
         require(json.getString("archiveHash").matches(Regex("[0-9a-f]{64}")))
         require(json.getInt("boot") >= 0 && json.getLong("elapsed") >= 0 && json.getLong("wall") >= 0)
         Summary(json.getString("token"), hash, count, xml.size, json.getInt("boot"),
-            json.getLong("elapsed"), json.getLong("wall"), json.getString("fingerprint"))
+            json.getLong("elapsed"), json.getLong("wall"), json.getString("fingerprint"), domain)
     }.getOrNull()
 
     @Synchronized fun delete() { file.delete() }

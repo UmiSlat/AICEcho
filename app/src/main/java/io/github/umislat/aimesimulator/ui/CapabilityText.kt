@@ -6,6 +6,15 @@ import io.github.umislat.aimesimulator.provisioning.NfcSnapshotWorkflow
 import io.github.umislat.aimesimulator.provisioning.ShizukuProbeModel
 
 internal object CapabilityText {
+    fun readiness(screen: ShizukuProbeModel.Screen): Int = when {
+        screen.connection != ShizukuProbeModel.Connection.READY -> connection(screen.connection)
+        screen.pending || screen.snapshotPending || screen.provisionPending -> R.string.shizuku_pending
+        screen.savedPlanRequiresResume && !screen.planSaved -> R.string.shizuku_card_resume_required
+        screen.canActivate -> R.string.capability_card_ready
+        screen.aosp?.canExport == true -> R.string.capability_setup_available
+        else -> summary(screen)
+    }
+
     fun connection(state: ShizukuProbeModel.Connection) = when (state) {
         ShizukuProbeModel.Connection.MISSING -> R.string.shizuku_missing
         ShizukuProbeModel.Connection.AVAILABLE -> R.string.shizuku_available
@@ -54,6 +63,8 @@ internal object CapabilityText {
         "BACKUP_FAILED" -> R.string.capability_backup_failed
         "UNSUPPORTED" -> R.string.capability_precheck_failed
         "INVALID_ARCHIVE" -> R.string.capability_invalid_archive
+        "STORAGE_DOMAIN_UNAVAILABLE" -> R.string.capability_storage_domain_unavailable
+        "STORAGE_DOMAIN_CHANGED" -> R.string.capability_storage_domain_changed
         "RUNTIME_BASELINE_USER_SCOPE" -> R.string.capability_runtime_scope_blocked
         "RUNTIME_BASELINE_PLATFORM" -> R.string.capability_runtime_platform_blocked
         "RUNTIME_BASELINE_USER_INACTIVE" -> R.string.capability_runtime_user_inactive

@@ -38,6 +38,7 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
         val provisionPending: Boolean = false,
         val provisionIdm: String = "",
         val provisionSource: NfcProvisionPlan.BaselineSource = NfcProvisionPlan.BaselineSource.FILE,
+        val provisionDomain: NfcStorageDomain? = null,
         val planSaved: Boolean = false,
         val savedPlanAvailable: Boolean = false,
         val savedPlanRequiresResume: Boolean = false,
@@ -111,7 +112,7 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
     private var generation = 0
     private var wantsPermission = false
     private val args = Shizuku.UserServiceArgs(ComponentName(application, HceShellService::class.java))
-        .daemon(false).tag("hcef-restore-probe").processNameSuffix("hcef_restore_probe").version(8)
+        .daemon(false).tag("hcef-restore-probe").processNameSuffix("hcef_restore_probe").version(9)
     private val poll = Runnable { refresh() }
     private val ageTick = object : Runnable {
         override fun run() { if (!closed) { publish(current()); main.postDelayed(this, 30_000) } }
@@ -231,6 +232,8 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
                     else if (lostSession) "" else previous.provisionIdm,
                 provisionSource = if (provisionRelevant) NfcProvisionPlan.BaselineSource.valueOf(
                     response.provision.getString("source") ?: "FILE") else previous.provisionSource,
+                provisionDomain = if (provisionRelevant) response.provision.getString("domain")?.let(NfcStorageDomain::valueOf)
+                    else if (lostSession) null else previous.provisionDomain,
                 planSaved = response.planSaved,
                 savedPlanAvailable = response.savedPlanAvailable,
                 savedPlanRequiresResume = response.savedPlanRequiresResume,

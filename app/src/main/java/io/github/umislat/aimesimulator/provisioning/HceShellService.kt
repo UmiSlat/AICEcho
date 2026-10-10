@@ -53,9 +53,10 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
                     RestoreProbeArchive.sha256(markerCertificate()) == RestoreProbeArchive.SIGNER_SHA256
                 }.getOrDefault(false))
                 // Readability is diagnostic only, never a claim of a complete fresh snapshot.
-                putBoolean("identityReadable", Process.myUid() == 2000 && File(
-                    "/data/user/0/com.android.nfc/files/dynamic_systemcode_nfcid2.xml"
-                ).canRead())
+                putBoolean("identityReadable", Process.myUid() == 2000 && runCatching {
+                    File(appContext.createPackageContext(NfcSnapshotArchive.PACKAGE, 0).dataDir,
+                        "files/dynamic_systemcode_nfcid2.xml").canRead()
+                }.getOrDefault(false))
                 putBundle("aospCapabilities", capabilities.bundle())
                 // Baseline preparation tries a scoped runtime read first; no export receipt is required.
                 putBoolean("nfcProvisioning", capabilities.canExport)
@@ -127,6 +128,7 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
             putByteArray("xml", capture.parsed.xml.copyOf())
             putString("identityHash", capture.parsed.identityHash)
             putString("archiveHash", capture.parsed.archiveHash)
+            putString("domain", capture.parsed.domain.name)
             putInt("records", capture.parsed.records)
             putInt("boot", capture.boot)
             putLong("elapsed", capture.elapsed)
@@ -162,7 +164,8 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
         if (token == provision.token) return provisionBundle()
         check(!probeUnresolved() && !snapshotUnresolved() && !provisionUnresolved())
         val live = provisioning.plan
-        check(live == null || (live.originalHash == saved.originalHash && live.proposedHash == saved.proposedHash)) {
+        check(live == null || (live.originalHash == saved.originalHash && live.proposedHash == saved.proposedHash &&
+            live.source == saved.source && live.domain == saved.domain)) {
             "A different live plan already exists"
         }
         provision = NfcProvisionWorkflow.Result(NfcProvisionWorkflow.State.CHECKING, token)
@@ -192,6 +195,7 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
             putString("oldSystemCode", plan.before.systemCode)
             putString("oldNfcid2", plan.before.nfcid2)
             putString("source", plan.source.name)
+            putString("domain", plan.domain.name)
             val checkpoint = provisioning.checkpoint()
             putString("direction", checkpoint.direction.name)
             checkpoint.rollback?.let {
@@ -238,6 +242,7 @@ class HceShellService(context: Context) : IHceShellService.Stub() {
         putString("detail", provision.detail)
         putString("nfcid2", provisioning.requestedIdm)
         putString("source", provisioning.source.name)
+        putString("domain", provisioning.domain?.name)
         putBoolean("hasPlan", provisioning.plan != null)
         putBoolean("canActivate", !provision.busy && provisioning.canActivate())
     }

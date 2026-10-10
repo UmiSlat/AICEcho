@@ -4,8 +4,8 @@ Current source now supports original-IDm emulation only (2026-10-09). Generated
 and suffix compatibility routes and their migration UI have been removed.
 Preparation and activation use the selected card's original IDm; the legal
 4000/02FE registration initializer remains an internal prerequisite when needed.
-This cleanup has not been installed; earlier 02FE device cycles below are history,
-not an alternate-identity feature of the current source.
+This cleanup was installed in code 49 on 2026-10-10; earlier 02FE device cycles
+below are history, not an alternate-identity feature of the current source.
 
 ## AOSP Backend Update (2026-10-09)
 
@@ -42,7 +42,7 @@ observed user-0 overrides. This is not a complete disk snapshot, does not alter
 provisioning eligibility and cannot submit a restore. The installed code-46 APK
 lacks this entry and the subsequent implementation below.
 
-Current local source uses UserService version 8. Card preparation separately checks
+The runtime-provisioning implementation used UserService version 8. Card preparation separately checks
 the full user list, installed service candidates, dynamic-field availability and
 two stable structured reads. Runtime reconstruction currently supports Android
 14+ and a single unlocked foreground owner user only; other profiles/users and
@@ -85,13 +85,81 @@ emulation activation or RF test was performed. This validates baseline capture
 and preparation on this device, not a new-identity restore cycle or multi-user
 support.
 
+Current source (2026-10-10) uses UserService version 9 and binds every snapshot,
+plan and selective rollback to a single CE (`f`) or DE (`d_f`) identity destination.
+File observations retain the archive's actual domain; runtime observations infer
+it from the NFC package's default Context data directory and require it to stay
+stable. Unknown default directories may fall back to an eligible full-file export,
+not a guessed CE target. This assumes the NFC cache uses the default package
+Context; vendor-specific alternate contexts/file layouts need separate validation.
+Both-domain exports are ambiguous and rejected; restores never write both domains.
+Plan store v3 and snapshot store v2 retain this domain. Older plans/snapshots are
+read as historical CE records. Fresh observations must match the prepared domain,
+including after runtime reload. Advanced configuration shows the domain; ordinary
+configuration remains unchanged. Local tests are not device/RF evidence, and code
+48 was built before this change.
+
+Code 49 (`3.0.0-storage-domain-probe`) was subsequently built and installed over
+code 47 with the same debug signer. Installation preserved all captured app
+files, NFC registrations and the default wallet. An explicit read-only prepare
+returned RUNTIME / ALREADY_PRESENT / CE; only the settled preparation journal
+changed. The default package directory also reports CE, but no disk identity
+file was read. That initial read-only phase performed no restore, registration,
+NFC reload, activation or RF test. The separately authorized cycle below subsequently
+validated new-identity restoration on CE; DE devices remain unverified.
+Package details and private-evidence boundaries are in AOSP_CAPABILITIES.md.
+
+## AOSP Runtime CE Device Cycle (2026-10-10, Code 49)
+
+The installed code-49 APK completed original -> independent synthetic -> original
+provisioning on Xiaomi 15 Pro / Android 16 / HyperOS, with only unlocked user 0.
+The synthetic profile used IDm `012E4C4142343931`, no account data and no original
+card blocks. It did not reintroduce a compatibility-IDm feature.
+
+- Preparation used complete structured runtime reconstruction, RUNTIME provenance,
+  CE destination and plan store v3. Standard shell `bu restore -user 0` returned
+  AWAITING_RELOAD / FORWARD after the user's explicit Android confirmation.
+- A separately approved NFC reload changed PID 10576 to 11696. Fresh structured
+  readback matched the complete proposed registration table semantically and the
+  CE domain, resulting in RELOADED / FORWARD. HINATA Lite FFFF/88B4 polling,
+  expected IDm, PMm 00F1000000014300, SC 88B4 and blocks 00/82/85 passed.
+- The retained in-session rollback saved the actual observed/replacement table
+  before submission. Its subsequent, separately approved reload changed PID
+  11696 to 16409; complete runtime verification passed as RELOADED / ROLLBACK.
+  This was a real rollback, unlike the fresh forward plan used in the historical
+  2.2.23 cycle. A second Android confirmation page was not independently observed;
+  success is established by readback and RF, not assumed UI behavior.
+- The original profile was reselected, the synthetic profile deleted, and the
+  ordinary Start emulation entry passed the original HINATA polling and all three
+  blocks. Both post-reload activations used the dedicated `:nfc_session` entry
+  without restarting the whole app or repeating restore to repair a stale Binder.
+- Final original profiles/selection, other HCE-F registrations and default wallet
+  matched the initial state. Emulation was stopped, Shizuku mode intentionally
+  retained, and a final read-only prepare returned ALREADY_PRESENT / CE. The
+  settled rollback plan remains stored with no pending operation.
+
+Independent forward and rollback readback checks passed (7 and 9); final state
+and two RF reports passed 56 checks. These are device-evidence checks, not new
+unit tests. Private reports and captures remain in ignored
+`build/storage-domain-probe-20261010`; original identities are not published.
+No application source changed or new APK was built during this cycle.
+
+Baseline capture, restore and reload ran via shell UID 2000 without Xiaomi export
+or Root NFC writes. The initial module-mode navigation included its existing
+registration attempt and Root status entry before switching to Shizuku, so this
+is not a whole-session no-Root-call audit. The phone remains rooted with LSPosed
+installed; no hooks/modules were changed, no cold reboot or game login occurred.
+Clean unrooted deployment, DE, other ROMs, account acceptance and process-death
+plan recovery remain separate acceptance work.
+
 ## Scope
 
 The requested end state is Aime emulation without Root, or with reduced
 privileges, including reliable original-card identity and account selection.
 This integration is a prerequisite, not that end state.
 
-Version 3.0 exposes **Set up card** on the ordinary card/status pages. It connects
+Version 3.0 exposes **Set up card** on the ordinary card page, without a duplicate
+on Status. It connects
 to a restricted UserService, checks shell execution and the installed owned
 marker app, submits an Android-confirmed restore entirely on the phone, and
 compares both restored marker files byte for byte. Current source also includes
@@ -99,10 +167,15 @@ AOSP NFC snapshot export and separately confirmed current-card provisioning,
 read-back and NFC reload. It reuses `PersistedHceRouteWorkflow` for activation and
 does not change default-wallet settings. On 2026-10-09, build 2.2.23 completed an
 original-IDm -> prefix-02FE -> original-IDm device/RF cycle, with an app-process
-restart workaround after NFC reload. Account acceptance and reliable in-process
-reconnection remain unverified; see the current device result below. The original
-Lab and snapshot controls are now inside collapsed advanced diagnostics, not the
-daily workflow.
+restart workaround after NFC reload. The code-49 cycle above subsequently passed
+CE runtime provisioning and both post-reload dedicated-process activations without
+that whole-app restart. Account acceptance and broader reconnection/lifecycle cases
+remain unverified. The original
+Lab, snapshot controls, baseline source and CE/DE details require Advanced mode,
+which directly shows a flat diagnostics section rather than another disclosure.
+Ordinary device checks retain basic results; runtime and full-backup probes are
+advanced-only. This UI cleanup follows the code-49 device cycle and has not been
+packaged or installed; historical screenshots do not validate the new layout.
 
 ## Earlier 3.0 Acceptance Build (Before the AOSP Backend Update)
 
@@ -395,7 +468,10 @@ the app's validated private snapshot is retained. This proves phone-side capture
 after Shizuku startup, not clean unrooted deployment, autonomous Shizuku startup,
 concurrent-write protection, safe NFC provisioning or stable original-account RF.
 
-## Local Provisioning Plan, 2026-10-08
+## Historical Local Provisioning Plan, 2026-10-08
+
+This subsection records the earlier planning-only stage. Legal initialization
+was subsequently integrated; current source/domain handling is described above.
 
 `NfcProvisionPlan` now prepares a single-record change from a complete validated
 XML baseline and its exact SHA-256. It accepts only the existing AimeHostService
@@ -510,9 +586,10 @@ APK v2 signing verifies. The tracked release version was not changed.
 
 ## Remaining NFC Work
 
-1. Validate the 3.0 foreground-process reconnection candidate on the device.
-   Check RF/reads after an explicitly approved reload, with unchanged main and
-   UserService PIDs and a retained plan. Do not repeat restore to repair a Binder.
+1. Expand the code-49 foreground-process evidence to repeated sessions and other
+   devices. Both post-reload activations and RF/reads passed in the CE cycle above;
+   retained-session behavior under interruptions still needs separate testing.
+   Do not repeat restore to repair a Binder.
 2. Verify the original account on the actual target reader/cabinet. The new
    HINATA RF/three-block evidence below is not game-account acceptance.
 3. Validate the new settled-plan recovery and daily card-switching behavior on

@@ -286,7 +286,7 @@ class MainActivity : AppCompatActivity() {
         val page = FrameLayout(this)
         val scroll = ScrollView(this).apply { isFillViewport = true }
         val content = verticalLayout(this)
-        content.addView(statusSummaryCard())
+        content.addView(statusSummary())
         content.addView(emulationActions())
 
         val profiles = store.profiles()
@@ -331,35 +331,31 @@ class MainActivity : AppCompatActivity() {
         return page
     }
 
-    private fun statusSummaryCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(CARD_RADIUS_DP).toFloat()
-        strokeWidth = dp(1)
+    private fun statusSummary(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
         isClickable = true
         isFocusable = true
         setOnClickListener { bottomNavigation.selectedItemId = TAB_STATUS }
-        addView(LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            addView(TextView(this@MainActivity).apply {
-                setText(R.string.simulation_status)
-                textSize = 13f
-                alpha = 0.7f
-            })
-            cardPageStatusView = TextView(this@MainActivity).apply {
-                textSize = 18f
-                setTypeface(typeface, Typeface.BOLD)
-                setPadding(0, dp(6), 0, 0)
-            }
-            addView(cardPageStatusView)
-            store.selectedProfile()?.let { profile ->
-                addView(TextView(this@MainActivity).apply {
-                    text = getString(R.string.current_card_summary, profile.label)
-                    textSize = 13f
-                    alpha = 0.72f
-                    setPadding(0, dp(8), 0, 0)
-                })
-            }
+        setPadding(dp(4), dp(12), dp(4), dp(12))
+        addView(TextView(this@MainActivity).apply {
+            setText(R.string.simulation_status)
+            textSize = 13f
+            alpha = 0.7f
         })
+        cardPageStatusView = TextView(this@MainActivity).apply {
+            textSize = 18f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, dp(6), 0, 0)
+        }
+        addView(cardPageStatusView)
+        store.selectedProfile()?.let { profile ->
+            addView(TextView(this@MainActivity).apply {
+                text = getString(R.string.current_card_summary, profile.label)
+                textSize = 13f
+                alpha = 0.72f
+                setPadding(0, dp(8), 0, 0)
+            })
+        }
     }
 
     private fun profileCard(profile: CardProfile, selected: Boolean): MaterialCardView =
@@ -439,68 +435,63 @@ class MainActivity : AppCompatActivity() {
         val content = verticalLayout(this)
         content.addView(sectionTitle(R.string.emulation_method))
         content.addView(emulationMethodSelector())
-        content.addView(emulationActions())
         content.addView(sectionTitle(R.string.simulation_status))
-        content.addView(MaterialCardView(this).apply {
-            radius = dp(CARD_RADIUS_DP).toFloat()
-            strokeWidth = dp(1)
-            addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(18), dp(16), dp(18), dp(16))
-                statusPageStatusView = TextView(this@MainActivity).apply {
-                    textSize = 18f
-                    setTypeface(typeface, Typeface.BOLD)
-                }
-                addView(statusPageStatusView)
+        content.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), dp(8), dp(4), dp(12))
+            statusPageStatusView = TextView(this@MainActivity).apply {
+                textSize = 18f
+                setTypeface(typeface, Typeface.BOLD)
+            }
+            addView(statusPageStatusView)
+            addView(TextView(this@MainActivity).apply {
+                visibility = if (store.advancedMode()) View.VISIBLE else View.GONE
+                setText(R.string.hce_status_summary)
+                textSize = 13f
+                alpha = 0.7f
+                setPadding(0, dp(6), 0, 0)
+            })
+            store.selectedProfile()?.let { profile ->
                 addView(TextView(this@MainActivity).apply {
-                    visibility = if (store.advancedMode()) View.VISIBLE else View.GONE
-                    setText(R.string.hce_status_summary)
+                    text = if (!store.advancedMode()) {
+                        getString(R.string.current_card_summary, profile.label)
+                    } else getString(
+                        R.string.current_identity_summary,
+                        profile.label,
+                        if (store.showIdm()) profile.idm
+                        else getString(R.string.hidden_value)
+                    )
+                    textSize = 14f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setPadding(0, dp(12), 0, 0)
+                })
+            }
+            if (store.advancedMode()) {
+                rootlessStatusView = TextView(this@MainActivity).apply {
+                    textSize = 15f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setPadding(0, dp(14), 0, 0)
+                }
+                addView(rootlessStatusView)
+                rootlessDetailView = TextView(this@MainActivity).apply {
                     textSize = 13f
-                    alpha = 0.7f
-                    setPadding(0, dp(6), 0, 0)
-                })
-                store.selectedProfile()?.let { profile ->
-                    addView(TextView(this@MainActivity).apply {
-                        text = if (!store.advancedMode()) {
-                            getString(R.string.current_card_summary, profile.label)
-                        } else getString(
-                            R.string.current_identity_summary,
-                            profile.label,
-                            if (store.showIdm()) profile.idm
-                            else getString(R.string.hidden_value)
-                        )
-                        textSize = 14f
-                        setTypeface(typeface, Typeface.BOLD)
-                        setPadding(0, dp(12), 0, 0)
-                    })
+                    alpha = 0.76f
+                    setPadding(0, dp(4), 0, 0)
                 }
-                if (store.advancedMode()) {
-                    rootlessStatusView = TextView(this@MainActivity).apply {
-                        textSize = 15f
-                        setTypeface(typeface, Typeface.BOLD)
-                        setPadding(0, dp(14), 0, 0)
-                    }
-                    addView(rootlessStatusView)
-                    rootlessDetailView = TextView(this@MainActivity).apply {
-                        textSize = 13f
-                        alpha = 0.76f
-                        setPadding(0, dp(4), 0, 0)
-                    }
-                    addView(rootlessDetailView)
-                }
-                val retryAction = MaterialButton(
-                    this@MainActivity,
-                    null,
-                    com.google.android.material.R.attr.materialButtonOutlinedStyle
-                ).apply {
-                    setText(R.string.hce_retry_registration)
-                    visibility = hceRetryActionVisibility()
-                    setOnClickListener { recreate() }
-                }
-                hceRetryAction = retryAction
-                addView(retryAction, LinearLayout.LayoutParams(-1, -2).apply {
-                    topMargin = dp(10)
-                })
+                addView(rootlessDetailView)
+            }
+            val retryAction = MaterialButton(
+                this@MainActivity,
+                null,
+                com.google.android.material.R.attr.materialButtonOutlinedStyle
+            ).apply {
+                setText(R.string.hce_retry_registration)
+                visibility = hceRetryActionVisibility()
+                setOnClickListener { recreate() }
+            }
+            hceRetryAction = retryAction
+            addView(retryAction, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(10)
             })
         })
         content.addView(sectionTitle(R.string.system_requirements))
@@ -509,8 +500,8 @@ class MainActivity : AppCompatActivity() {
             setIconResource(R.drawable.ic_nav_status)
             setOnClickListener { startActivity(Intent(this@MainActivity, DeviceCapabilitiesActivity::class.java)) }
         }, LinearLayout.LayoutParams(-1, -2))
-        content.addView(defaultNfcAppCard())
-        if (!store.persistedRouteOnlyMode()) content.addView(pmmCard().apply { applyMargins(vertical = 6) })
+        content.addView(defaultNfcAppSection())
+        if (!store.persistedRouteOnlyMode()) content.addView(pmmSection().apply { applyMargins(vertical = 6) })
         scroll.addView(content)
         return scroll
     }
@@ -566,66 +557,58 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun defaultNfcAppCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(CARD_RADIUS_DP).toFloat()
-        strokeWidth = dp(1)
-        addView(LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(14))
-            addView(TextView(this@MainActivity).apply {
-                setText(R.string.default_nfc_app)
-                textSize = 16f
-                setTypeface(typeface, Typeface.BOLD)
-            })
-            defaultNfcStatusView = TextView(this@MainActivity).apply {
-                textSize = 14f
-                setPadding(0, dp(6), 0, 0)
-            }
-            addView(defaultNfcStatusView)
-            defaultNfcAction = MaterialButton(
-                this@MainActivity,
-                null,
-                com.google.android.material.R.attr.materialButtonOutlinedStyle
-            ).apply {
-                setOnClickListener { handleDefaultNfcAction() }
-            }
-            addView(defaultNfcAction, LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(8)
-            })
+    private fun defaultNfcAppSection(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(4), dp(14), dp(4), dp(14))
+        addView(TextView(this@MainActivity).apply {
+            setText(R.string.default_nfc_app)
+            textSize = 16f
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        defaultNfcStatusView = TextView(this@MainActivity).apply {
+            textSize = 14f
+            setPadding(0, dp(6), 0, 0)
+        }
+        addView(defaultNfcStatusView)
+        defaultNfcAction = MaterialButton(
+            this@MainActivity,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            setOnClickListener { handleDefaultNfcAction() }
+        }
+        addView(defaultNfcAction, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(8)
         })
     }
 
-    private fun pmmCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(CARD_RADIUS_DP).toFloat()
-        strokeWidth = dp(1)
-        addView(LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(12), dp(18), dp(16))
-            pmmProgress = LinearProgressIndicator(this@MainActivity).apply {
-                isIndeterminate = true
-                hide()
+    private fun pmmSection(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(4), dp(12), dp(4), dp(16))
+        pmmProgress = LinearProgressIndicator(this@MainActivity).apply {
+            isIndeterminate = true
+            hide()
+        }
+        addView(pmmProgress, LinearLayout.LayoutParams(-1, dp(4)))
+        pmmSwitch = MaterialSwitch(this@MainActivity).apply {
+            setText(if (store.advancedMode()) R.string.enable_pmm_patch else R.string.compatibility_patch)
+            isEnabled = false
+            setOnCheckedChangeListener { button, enabled ->
+                if (button.isPressed) changePmm(enabled)
             }
-            addView(pmmProgress, LinearLayout.LayoutParams(-1, dp(4)))
-            pmmSwitch = MaterialSwitch(this@MainActivity).apply {
-                setText(if (store.advancedMode()) R.string.enable_pmm_patch else R.string.compatibility_patch)
-                isEnabled = false
-                setOnCheckedChangeListener { button, enabled ->
-                    if (button.isPressed) changePmm(enabled)
-                }
-            }
-            addView(pmmSwitch)
-            pmmStatus = TextView(this@MainActivity).apply {
-                setText(R.string.checking_status)
-                textSize = 14f
-                setPadding(0, dp(4), 0, dp(8))
-            }
-            addView(pmmStatus)
-            addView(TextView(this@MainActivity).apply {
-                visibility = if (store.advancedMode()) View.VISIBLE else View.GONE
-                setText(R.string.pmm_explanation)
-                textSize = 13f
-                alpha = 0.72f
-            })
+        }
+        addView(pmmSwitch)
+        pmmStatus = TextView(this@MainActivity).apply {
+            setText(R.string.checking_status)
+            textSize = 14f
+            setPadding(0, dp(4), 0, dp(8))
+        }
+        addView(pmmStatus)
+        addView(TextView(this@MainActivity).apply {
+            visibility = if (store.advancedMode()) View.VISIBLE else View.GONE
+            setText(R.string.pmm_explanation)
+            textSize = 13f
+            alpha = 0.72f
         })
     }
 
@@ -643,16 +626,15 @@ class MainActivity : AppCompatActivity() {
         })
         content.addView(sectionTitle(R.string.appearance))
         val dynamicAvailable = DynamicColors.isDynamicColorAvailable()
-        content.addView(settingsGroupCard().apply {
-            val group = getChildAt(0) as LinearLayout
-            group.addView(TextView(this@MainActivity).apply {
+        content.addView(settingsGroup().apply {
+            addView(TextView(this@MainActivity).apply {
                 setText(R.string.theme_mode)
                 textSize = 15f
                 setTypeface(typeface, Typeface.BOLD)
                 setPadding(0, 0, 0, dp(8))
             })
-            group.addView(buildThemeSelector())
-            group.addView(MaterialSwitch(this@MainActivity).apply {
+            addView(buildThemeSelector())
+            addView(MaterialSwitch(this@MainActivity).apply {
                 setText(R.string.dynamic_colors)
                 isChecked = dynamicAvailable &&
                     ThemeSettings.dynamicColorsEnabled(this@MainActivity)
@@ -665,19 +647,15 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             })
-            group.addView(settingsSummary(
-                if (dynamicAvailable) R.string.dynamic_colors_summary
-                else R.string.dynamic_colors_unavailable
-            ))
+            if (!dynamicAvailable) addView(settingsSummary(R.string.dynamic_colors_unavailable))
         })
 
         content.addView(sectionTitle(R.string.card_data))
-        content.addView(cardDataSettingsCard())
+        content.addView(cardDataSettings())
 
         content.addView(sectionTitle(R.string.privacy))
-        content.addView(settingsGroupCard().apply {
-            val group = getChildAt(0) as LinearLayout
-            group.addView(MaterialSwitch(this@MainActivity).apply {
+        content.addView(settingsGroup().apply {
+            addView(MaterialSwitch(this@MainActivity).apply {
                 visibility = if (store.advancedMode()) View.VISIBLE else View.GONE
                 setText(R.string.show_idm)
                 isChecked = store.showIdm()
@@ -685,14 +663,13 @@ class MainActivity : AppCompatActivity() {
                     if (button.isPressed) store.setShowIdm(value)
                 }
             })
-            group.addView(MaterialSwitch(this@MainActivity).apply {
+            addView(MaterialSwitch(this@MainActivity).apply {
                 setText(R.string.show_access_code)
                 isChecked = store.showAccessCode()
                 setOnCheckedChangeListener { button, value ->
                     if (button.isPressed) store.setShowAccessCode(value)
                 }
             })
-            group.addView(settingsSummary(R.string.profile_visibility_summary))
         })
 
         content.addView(sectionTitle(R.string.application_section))
@@ -710,14 +687,9 @@ class MainActivity : AppCompatActivity() {
         return scroll
     }
 
-    private fun settingsGroupCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(CARD_RADIUS_DP).toFloat()
-        strokeWidth = dp(1)
-        cardElevation = 0f
-        addView(LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(14))
-        })
+    private fun settingsGroup(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(4), dp(4), dp(4), dp(12))
     }
 
     private fun settingsSummary(@androidx.annotation.StringRes text: Int): TextView =
@@ -728,26 +700,20 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(4), 0, 0)
         }
 
-    private fun cardDataSettingsCard(): MaterialCardView = settingsGroupCard().apply {
-        val group = getChildAt(0) as LinearLayout
+    private fun cardDataSettings(): LinearLayout = settingsGroup().apply {
         val profiles = store.profiles()
         val count = resources.getQuantityString(
             R.plurals.card_profile_count,
             profiles.size,
             profiles.size
         )
-        group.addView(TextView(this@MainActivity).apply {
-            setText(R.string.card_data_local_title)
-            textSize = 16f
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        group.addView(TextView(this@MainActivity).apply {
+        addView(TextView(this@MainActivity).apply {
             text = getString(R.string.card_data_local_summary, count)
             textSize = 13f
             alpha = 0.76f
             setPadding(0, dp(5), 0, dp(10))
         })
-        group.addView(LinearLayout(this@MainActivity).apply {
+        addView(LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(backupActionButton(R.string.export_backup, R.drawable.ic_export).apply {
                 isEnabled = profiles.isNotEmpty()

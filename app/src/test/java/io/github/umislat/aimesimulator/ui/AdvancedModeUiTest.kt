@@ -8,6 +8,7 @@ import android.widget.EditText
 import android.widget.TextView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
+import com.google.android.material.card.MaterialCardView
 import com.google.android.material.materialswitch.MaterialSwitch
 import io.github.umislat.aimesimulator.R
 import io.github.umislat.aimesimulator.data.CardProfile
@@ -199,6 +200,7 @@ class AdvancedModeUiTest {
             showPage(1002)
             assertEquals(1, visibleViews(screen()).filterIsInstance<MaterialButtonToggleGroup>().count())
             assertFalse(screenText().contains("02FE"))
+            showPage(1001)
             button(screen(), R.string.emulation_start).performClick()
             assertEquals(profile.idm, org.robolectric.Shadows.shadowOf(activity).nextStartedActivity
                 .getStringExtra(PersistedEmulationActivity.EXTRA_NFCID2))
@@ -243,17 +245,27 @@ class AdvancedModeUiTest {
     @Test fun savedModeHasDailyActionsWithoutRootModuleControls() {
         store.setPersistedRouteOnlyMode(true)
         showPage(1002)
-        assertTrue(screenText().contains(activity.getString(R.string.emulation_start)))
-        assertTrue(screenText().contains(activity.getString(R.string.emulation_setup)))
+        assertFalse(screenText().contains(activity.getString(R.string.emulation_start)))
+        assertFalse(screenText().contains(activity.getString(R.string.emulation_setup)))
         assertFalse(screenText().contains(activity.getString(R.string.compatibility_patch)))
         assertFalse(screenText().contains(activity.getString(R.string.enable_pmm_patch)))
         MainActivity::class.java.getDeclaredMethod("refreshPmm").apply { isAccessible = true }.invoke(activity)
         assertEquals(null, MainActivity::class.java.getDeclaredField("pmmSnapshot").apply { isAccessible = true }.get(activity))
         showPage(1001)
+        assertTrue(screenText().contains(activity.getString(R.string.emulation_setup)))
         button(screen(), R.string.emulation_start).performClick()
         val intent = org.robolectric.Shadows.shadowOf(activity).nextStartedActivity
         assertEquals(PersistedEmulationActivity::class.java.name, intent.component!!.className)
         assertEquals(profile.idm, intent.getStringExtra(PersistedEmulationActivity.EXTRA_NFCID2))
+    }
+
+    @Test fun onlyRepeatedProfilesKeepCardFrames() {
+        showPage(1001)
+        assertEquals(1, visibleViews(screen()).filterIsInstance<MaterialCardView>().count())
+        for (tab in listOf(1002, 1003)) {
+            showPage(tab)
+            assertEquals(0, visibleViews(screen()).filterIsInstance<MaterialCardView>().count())
+        }
     }
 
     private fun preferencesWithoutUiMode(): Map<String, *> =

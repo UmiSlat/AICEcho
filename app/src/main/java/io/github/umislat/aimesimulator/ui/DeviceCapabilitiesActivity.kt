@@ -18,6 +18,7 @@ import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
@@ -33,6 +34,8 @@ import io.github.umislat.aimesimulator.provisioning.ShizukuProbeModel
 class DeviceCapabilitiesActivity : AppCompatActivity() {
     private lateinit var model: ShizukuProbeModel
     private lateinit var content: LinearLayout
+    private lateinit var diagnostics: LinearLayout
+    private lateinit var device: TextView
     private lateinit var hardware: TextView
     private lateinit var hcef: TextView
     private lateinit var registration: TextView
@@ -63,34 +66,36 @@ class DeviceCapabilitiesActivity : AppCompatActivity() {
             setNavigationOnClickListener { leave() }
         })
         content = verticalLayout(this)
-        row(R.string.capability_device).text = getString(R.string.capability_device_value,
-            Build.MANUFACTURER, Build.MODEL, Build.VERSION.RELEASE, Build.VERSION.SDK_INT)
+        device = row(R.string.capability_device)
         hardware = row(R.string.capability_nfc)
         hcef = row(R.string.capability_hcef)
         registration = row(R.string.capability_registration)
         connection = row(R.string.emulation_method_shizuku)
         connect = button(R.string.shizuku_connect, R.drawable.ic_nav_status) { model.connect() }
-        service = row(R.string.capability_service)
-        target = row(R.string.capability_target)
-        snapshot = row(R.string.capability_snapshot)
-        runtime = row(R.string.capability_runtime)
-        inspectRuntime = button(R.string.capability_runtime_read, R.drawable.ic_read_nfc) { model.inspectRuntime() }
-        restore = row(R.string.capability_restore)
         conclusion = row(R.string.capability_conclusion)
         refresh = button(R.string.capability_refresh, android.R.drawable.ic_popup_sync) {
             renderHardware()
             model.refresh()
-        }
-        verify = button(R.string.capability_verify, R.drawable.ic_read_nfc) {
-            MaterialAlertDialogBuilder(this).setTitle(R.string.capability_verify)
-                .setMessage(R.string.shizuku_snapshot_confirm).setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton(R.string.capability_verify) { _, _ -> model.captureSnapshot() }.show()
         }
         setup = button(R.string.emulation_setup, R.drawable.ic_nav_status) {
             startActivity(Intent(this, ShizukuProvisioningActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
             finish()
         }
+        diagnostics = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        diagnostics.addView(sectionTitle(R.string.provision_diagnostics))
+        service = row(R.string.capability_service, diagnostics)
+        target = row(R.string.capability_target, diagnostics)
+        snapshot = row(R.string.capability_snapshot, diagnostics)
+        runtime = row(R.string.capability_runtime, diagnostics)
+        inspectRuntime = button(R.string.capability_runtime_read, R.drawable.ic_read_nfc, diagnostics) { model.inspectRuntime() }
+        restore = row(R.string.capability_restore, diagnostics)
+        verify = button(R.string.capability_verify, R.drawable.ic_read_nfc, diagnostics) {
+            MaterialAlertDialogBuilder(this).setTitle(R.string.capability_verify)
+                .setMessage(R.string.shizuku_snapshot_confirm).setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.capability_verify) { _, _ -> model.captureSnapshot() }.show()
+        }
+        content.addView(diagnostics)
         root.addView(ScrollView(this).apply { isFillViewport = true; addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f))
         setInsetAwareContentView(root)
         model.screen.observe(this, ::render)
@@ -137,6 +142,11 @@ class DeviceCapabilitiesActivity : AppCompatActivity() {
     }
 
     private fun render(screen: ShizukuProbeModel.Screen) {
+        val advanced = CardStore(this).advancedMode()
+        diagnostics.isVisible = advanced
+        device.text = if (advanced) getString(R.string.capability_device_value,
+            Build.MANUFACTURER, Build.MODEL, Build.VERSION.RELEASE, Build.VERSION.SDK_INT)
+            else getString(R.string.capability_device_basic, Build.MANUFACTURER, Build.MODEL, Build.VERSION.RELEASE)
         connection.setText(CapabilityText.connection(screen.connection))
         connect.visibility = if (screen.connection == ShizukuProbeModel.Connection.READY) View.GONE else View.VISIBLE
         connect.isEnabled = applicationInfo.uid / 100000 == 0 && screen.connection !in setOf(
@@ -182,7 +192,8 @@ class DeviceCapabilitiesActivity : AppCompatActivity() {
                 (screen.planSaved && screen.provision.state == NfcProvisionWorkflow.State.RELOADED) -> R.string.capability_restore_verified
             else -> R.string.capability_restore_unverified
         })
-        conclusion.setText(if (applicationInfo.uid / 100000 != 0) R.string.capability_user_blocked else CapabilityText.summary(screen))
+        conclusion.setText(if (applicationInfo.uid / 100000 != 0) R.string.capability_user_blocked
+            else if (advanced) CapabilityText.summary(screen) else CapabilityText.readiness(screen))
         refresh.isEnabled = !screen.busy
         verify.isEnabled = screen.canCapture && packageManager.hasSystemFeature(PackageManager.FEATURE_NFC_HOST_CARD_EMULATION_NFCF)
         inspectRuntime.isEnabled = screen.canInspectRuntime && packageManager.hasSystemFeature(PackageManager.FEATURE_NFC_HOST_CARD_EMULATION_NFCF)
@@ -195,17 +206,19 @@ class DeviceCapabilitiesActivity : AppCompatActivity() {
         else finish()
     }
 
-    private fun row(title: Int): TextView {
-        content.addView(TextView(this).apply {
+    private fun row(title: Int, parent: LinearLayout = content): TextView {
+        parent.addView(TextView(this).apply {
             setText(title); textSize = 14f; setTypeface(typeface, Typeface.BOLD)
             setPadding(0, dp(16), 0, dp(4))
         }, LinearLayout.LayoutParams(-1, -2))
-        return TextView(this).apply { textSize = 14f; content.addView(this, LinearLayout.LayoutParams(-1, -2)) }
+        return TextView(this).apply { textSize = 14f; parent.addView(this, LinearLayout.LayoutParams(-1, -2)) }
     }
 
-    private fun button(title: Int, icon: Int, action: () -> Unit) = MaterialButton(this, null,
+    private fun button(title: Int, icon: Int, parent: LinearLayout = content, action: () -> Unit) = MaterialButton(this, null,
         com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
         setText(title); setIconResource(icon); setOnClickListener { action() }
-        content.addView(this, LinearLayout.LayoutParams(-1, -2))
+        maxLines = 2
+        minHeight = dp(48)
+        parent.addView(this, LinearLayout.LayoutParams(-1, -2))
     }
 }

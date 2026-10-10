@@ -32,12 +32,19 @@ change emulation-method/patch preferences, or remove any card data.
 Version 3.0 exposes an emulation-method selector separately from advanced mode.
 Fresh installations default to saved-identity/Shizuku operation; upgrades preserve
 the existing method, card selection and raw captures. Saved-identity mode has
-explicit Start emulation and Set up card commands. Its MainActivity neither
+explicit Start emulation and Set up card commands on Cards, not duplicated on
+Status. Status keeps method selection, device checks and wallet controls.
+Page sections are unframed; card containers are reserved for repeated profiles.
+Its MainActivity neither
 registers NFC identities nor automatically inspects the Root PMm module. The
 module route retains its existing foreground registration behavior.
 
 The setup page shows the relevant manual provisioning steps. Technical identity
-fields and the collapsed Lab/snapshot diagnostics require advanced mode. A
+fields, baseline source, CE/DE destination and Lab/snapshot diagnostics require
+advanced mode and appear directly in one flat diagnostics section, without a
+second disclosure control. Ordinary setup shows the current card and next manual
+step, not the whole list of inactive actions. Optional settled-plan recovery is
+advanced-only; required unfinished-plan recovery remains visible in ordinary mode. A
 changed card or original IDm disables write/activation for an older prepared identity.
 Reopening a settled plan requires explicit confirmation and a fresh table export;
 it does not submit a restore or reload. Unresolved same-boot operations stay
@@ -47,7 +54,14 @@ Saved-identity emulation uses a separate same-UID foreground activity. It checks
 the expected IDm/88B4 mapping, enables the existing main-process card service,
 and releases it on pause. Leaving the session recycles only the session process;
 rotation does not. A mismatch provides a return-to-setup action, never an automatic
-identity write. This strategy still needs version-3.0 device/RF acceptance.
+identity write. Code 49 passed both post-reload activations and RF in the single
+Xiaomi/CE cycle; other devices and interrupted-session recovery remain unverified.
+
+The device-check page remains available without a selected card in ordinary mode.
+It shows hardware, declared emulation support, current-card registration, Shizuku
+connection and a readiness result that does not claim RF success. API level,
+backup service/agent details, runtime-field inspection and full-backup probes are
+advanced-only. Entering or switching UI mode never runs these explicit probes.
 
 The ordinary editor shows name and Access Code. Manual creation still requires
 IDm because Access Code cannot provide it; editing an existing profile or saving

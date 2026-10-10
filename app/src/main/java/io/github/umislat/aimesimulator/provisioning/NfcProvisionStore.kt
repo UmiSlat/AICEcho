@@ -15,7 +15,8 @@ internal class NfcProvisionStore(directory: File) {
         val plan = validate(data, ownerUid)
         val checkpoint = checkpoint(data, plan)
         val token = data.getString("token").orEmpty()
-        val json = JSONObject().put("version", 2).put("token", token).put("uid", ownerUid).put("boot", boot)
+        val json = JSONObject().put("version", 3).put("token", token).put("uid", ownerUid).put("boot", boot)
+            .put("domain", plan.domain.name)
             .put("source", plan.source.name).put("state", checkpoint.state.name).put("direction", checkpoint.direction.name)
             .put("nfcid2", plan.after.nfcid2).put("oldSystemCode", plan.before.systemCode)
             .put("oldNfcid2", plan.before.nfcid2).put("originalHash", plan.originalHash)
@@ -37,6 +38,7 @@ internal class NfcProvisionStore(directory: File) {
         check(retained.getString("token") == token && retained.getInt("boot") == boot &&
             retained.getString("originalHash") == plan.originalHash &&
             retained.getString("proposedHash") == plan.proposedHash && retained.getString("source") == plan.source.name &&
+            retained.getString("domain") == plan.domain.name &&
             retained.getString("state") == checkpoint.state.name && retained.getString("direction") == checkpoint.direction.name &&
             retained.getByteArray("rollbackXml").contentEquals(checkpoint.rollback?.xml()) &&
             retained.getByteArray("rollbackObservation").contentEquals(checkpoint.rollback?.observationXml())) { "Saved plan differs" }
@@ -78,11 +80,12 @@ internal class NfcProvisionStore(directory: File) {
         }
         val json = JSONObject(raw)
         val version = json.getInt("version")
-        require(version in 1..2)
+        require(version in 1..3)
         Bundle().apply {
             putString("token", json.getString("token"))
             putInt("uid", json.getInt("uid"))
             putInt("boot", json.getInt("boot"))
+            putString("domain", if (version < 3) NfcStorageDomain.CE.name else json.getString("domain"))
             putString("source", if (version == 1) NfcProvisionPlan.BaselineSource.FILE.name else json.getString("source"))
             putString("state", if (version == 1) NfcProvisionWorkflow.State.PREPARED.name else json.getString("state"))
             putString("direction", if (version == 1) NfcProvisionWorkflow.Direction.FORWARD.name else json.getString("direction"))
@@ -114,7 +117,8 @@ internal class NfcProvisionStore(directory: File) {
                 NfcProvisionPlan.Target.AIME, ownerUid,
                 NfcProvisionPlan.Identity(data.getString("oldSystemCode").orEmpty(), data.getString("oldNfcid2").orEmpty()),
                 NfcProvisionPlan.Identity("88B4", data.getString("nfcid2").orEmpty()),
-                NfcProvisionPlan.BaselineSource.valueOf(data.getString("source") ?: "FILE"))
+                NfcProvisionPlan.BaselineSource.valueOf(data.getString("source") ?: "FILE"),
+                NfcStorageDomain.valueOf(data.getString("domain") ?: "CE"))
             require(plan.proposedXml().contentEquals(proposed))
             require(plan.proposedHash == data.getString("proposedHash"))
             return plan
