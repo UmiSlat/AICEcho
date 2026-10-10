@@ -242,12 +242,12 @@
     <string name="capability_runtime_scope_blocked">Setup from system NFC registrations supports only a single owner user. Additional users or profiles were detected, so setup could not be prepared.</string>
     <string name="capability_runtime_platform_blocked">Setup from system NFC registrations requires Android 14 or later. Devices supporting full file backup can use that method instead.</string>
     <string name="capability_runtime_user_inactive">Switch to and unlock the phone’s owner user, then check this card again.</string>
-    <string name="capability_runtime_dynamic_blocked">The system did not provide all NFC registration fields needed to prepare this card. No configuration was applied.</string>
+    <string name="capability_runtime_dynamic_blocked">The system did not provide all NFC registration fields needed to prepare this card.</string>
     <string name="capability_runtime_cache_blocked">System NFC registrations were incomplete or changed during the check. Keep NFC on, wait a moment, then check this card again.</string>
     <string name="capability_runtime_pending">Reading the system NFC configuration timed out or is still in progress. No new restore was started.</string>
     <string name="capability_runtime_unavailable">The system could not provide a complete NFC configuration for this method. No replacement configuration was created.</string>
     <string name="shizuku_card_unchanged">The system configuration is unchanged. Restore may have been cancelled or timed out; apply the configuration again when ready.</string>
-    <string name="shizuku_card_conflict">The system configuration changed unexpectedly. Check this card again before continuing. NFC was not restarted and no automatic recovery was attempted.</string>
+    <string name="shizuku_card_conflict">The system configuration changed unexpectedly. Check this card again before continuing. No automatic recovery was attempted.</string>
     <string name="shizuku_card_reloading">Restarting NFC…</string>
     <string name="shizuku_card_reloaded">NFC restarted. Start emulation to check the loaded card configuration.</string>
     <string name="shizuku_card_rolling_back">Preparing to restore the previous configuration…</string>

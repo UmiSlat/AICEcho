@@ -240,12 +240,12 @@
     <string name="capability_runtime_scope_blocked">通过系统 NFC 登记配置卡片，目前仅支持单一主用户。检测到额外用户或工作资料，无法完成配置准备。</string>
     <string name="capability_runtime_platform_blocked">通过系统 NFC 登记配置卡片，需要 Android 14 或更高版本。支持完整文件备份的设备仍可通过备份方式配置。</string>
     <string name="capability_runtime_user_inactive">请切换到手机主用户并解锁，再重新检查当前卡片。</string>
-    <string name="capability_runtime_dynamic_blocked">系统未提供配置此卡片所需的全部 NFC 登记信息，未应用任何配置。</string>
+    <string name="capability_runtime_dynamic_blocked">系统未提供配置此卡片所需的全部 NFC 登记信息。</string>
     <string name="capability_runtime_cache_blocked">系统 NFC 登记信息不完整，或在检查期间发生了变化。请保持 NFC 开启，稍后重新检查当前卡片。</string>
     <string name="capability_runtime_pending">读取系统 NFC 配置超时或仍在进行，未发起新的恢复操作。</string>
     <string name="capability_runtime_unavailable">系统未能提供此方式所需的完整 NFC 配置，未创建替代配置。</string>
     <string name="shizuku_card_unchanged">系统配置未改变，恢复可能已取消或确认超时。准备好后可再次应用配置。</string>
-    <string name="shizuku_card_conflict">系统配置发生了预期之外的变化，请重新检查当前卡片后再继续。应用未重启 NFC，也未自动恢复旧配置。</string>
+    <string name="shizuku_card_conflict">系统配置发生了预期之外的变化，请重新检查当前卡片后再继续。应用未自动恢复旧配置。</string>
     <string name="shizuku_card_reloading">正在重启 NFC…</string>
     <string name="shizuku_card_reloaded">NFC 已重启。开始模拟时会再次核对已加载的卡片配置。</string>
     <string name="shizuku_card_rolling_back">正在准备恢复之前的配置…</string>
