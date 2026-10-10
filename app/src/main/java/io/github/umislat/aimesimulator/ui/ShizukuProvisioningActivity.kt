@@ -77,9 +77,6 @@ class ShizukuProvisioningActivity : AppCompatActivity() {
         capabilities = label(diagnostics)
         connect = button(content, R.string.shizuku_connect, primary = true) { model.connect() }
         deviceSummary = label(diagnostics)
-        deviceCheck = button(diagnostics, R.string.device_capabilities) {
-            startActivity(Intent(this, DeviceCapabilitiesActivity::class.java))
-        }.apply { setIconResource(R.drawable.ic_nav_status) }
         refresh = button(diagnostics, R.string.shizuku_refresh) { model.refresh() }
         provisionStatus = label(content)
         provisionSource = label(diagnostics)
@@ -104,6 +101,9 @@ class ShizukuProvisioningActivity : AppCompatActivity() {
         rollbackCard = button(content, R.string.shizuku_card_rollback) {
             confirm(R.string.shizuku_card_rollback, R.string.shizuku_card_rollback_confirm) { model.rollbackNfc() }
         }
+        deviceCheck = button(content, R.string.device_capabilities) {
+            startActivity(Intent(this, DeviceCapabilitiesActivity::class.java))
+        }.apply { setIconResource(R.drawable.ic_nav_status) }
         label(diagnostics).setText(R.string.shizuku_snapshot_capture)
         snapshotStatus = label(diagnostics)
         snapshotSummary = label(diagnostics)

@@ -80,7 +80,11 @@ class PersistedEmulationActivity : AppCompatActivity() {
             PersistedHceRouteWorkflow.Outcome.NFCID2_MISMATCH -> getString(R.string.emulation_setup_required)
             PersistedHceRouteWorkflow.Outcome.NFC_DISABLED -> getString(R.string.nfc_disabled)
             PersistedHceRouteWorkflow.Outcome.UNSUPPORTED -> getString(R.string.hce_unsupported)
-            else -> getString(R.string.shizuku_card_enable_failed, outcome.outcome.name)
+            else -> if (intent.getBooleanExtra(EXTRA_DETAILS, false)) {
+                getString(R.string.shizuku_card_enable_failed, outcome.outcome.name)
+            } else {
+                getString(R.string.simple_emulation_failed)
+            }
         }
         configure.visibility = if (outcome.outcome in setOf(PersistedHceRouteWorkflow.Outcome.SYSTEM_CODE_MISMATCH,
             PersistedHceRouteWorkflow.Outcome.NFCID2_MISMATCH)) View.VISIBLE else View.GONE
