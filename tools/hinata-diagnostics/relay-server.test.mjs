@@ -6,6 +6,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { PassThrough } from "node:stream";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const HELLO = JSON.stringify({
@@ -105,21 +106,32 @@ function parseServerFrame(state) {
 
 function readChunk(socket, timeout = 1000) {
   return new Promise((resolve, reject) => {
+    let settled = false;
     const timer = setTimeout(() => finish(new Error("Timed out waiting for WebSocket frame")), timeout);
-    const onData = (chunk) => finish(null, chunk);
+    const onReadable = () => {
+      const chunk = socket.read();
+      if (chunk !== null) finish(null, chunk);
+    };
     const onClose = () => finish(new Error("WebSocket closed"));
     const onError = (error) => finish(error);
     function finish(error, chunk) {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      socket.off("data", onData);
+      socket.off("readable", onReadable);
+      socket.off("end", onClose);
       socket.off("close", onClose);
       socket.off("error", onError);
       if (error) reject(error);
       else resolve(chunk);
     }
-    socket.once("data", onData);
+    // Keep the stream paused between reads so incoming frames remain buffered.
+    socket.on("readable", onReadable);
+    socket.once("end", onClose);
     socket.once("close", onClose);
     socket.once("error", onError);
+    onReadable();
+    if (socket.destroyed || socket.readableEnded) onClose();
   });
 }
 
@@ -145,6 +157,23 @@ async function stopChild(child) {
     delay(1000).then(() => child.kill()),
   ]);
 }
+
+test("retains consecutive WebSocket chunks between reads", async () => {
+  const socket = new PassThrough();
+  try {
+    const firstChunk = readChunk(socket);
+    socket.write(Buffer.from([0x89, 0x00]));
+    const state = { buffer: await firstChunk };
+    socket.write(Buffer.from([0x81, 0x02, 0x4f, 0x4b]));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal((await nextServerFrame(socket, state)).opcode, 0x09);
+    const message = await nextServerFrame(socket, state);
+    assert.equal(message.opcode, 0x01);
+    assert.equal(message.payload.toString("utf8"), "OK");
+  } finally {
+    socket.destroy();
+  }
+});
 
 test("serves a guarded relay, forwards AIC V2, and expires stale clients", async () => {
   const port = await reservePort();
