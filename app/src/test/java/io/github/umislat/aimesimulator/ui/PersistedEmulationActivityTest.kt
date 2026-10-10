@@ -106,7 +106,18 @@ class PersistedEmulationActivityTest {
         val controller = controller().setup()
         try {
             assertEquals(listOf("disable", "systemCode", "nfcid2", "enable", "disable"), NfcFShadow.calls)
-            assertTrue(texts(controller.get()).any { it.contains("ENABLE_FAILED") })
+            assertTrue(texts(controller.get()).contains(app.getString(R.string.simple_emulation_failed)))
+            assertFalse(texts(controller.get()).any { it.contains("ENABLE_FAILED") })
+            assertFalse(texts(controller.get()).contains(app.getString(R.string.shizuku_card_enabled)))
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun advancedSessionKeepsFailureDetails() {
+        NfcFShadow.enableResult = false
+        val controller = controller(details = true).setup()
+        try {
+            assertTrue(texts(controller.get()).contains(app.getString(R.string.shizuku_card_enable_failed, "ENABLE_FAILED")))
+            assertFalse(texts(controller.get()).contains(app.getString(R.string.simple_emulation_failed)))
         } finally { controller.pause().stop().destroy() }
     }
 
@@ -157,8 +168,8 @@ class PersistedEmulationActivityTest {
         } finally { controller.pause().stop().destroy() }
     }
 
-    private fun controller() = Robolectric.buildActivity(PersistedEmulationActivity::class.java,
-        PersistedEmulationActivity.intent(app, "Synthetic", idm))
+    private fun controller(details: Boolean = false) = Robolectric.buildActivity(PersistedEmulationActivity::class.java,
+        PersistedEmulationActivity.intent(app, "Synthetic", idm, details))
 
     private fun texts(activity: Activity) = views(activity.findViewById(android.R.id.content))
         .filterIsInstance<TextView>().map { it.text.toString() }.toList()

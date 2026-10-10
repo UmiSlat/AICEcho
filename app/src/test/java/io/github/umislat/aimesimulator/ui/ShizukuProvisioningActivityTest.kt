@@ -290,8 +290,33 @@ class ShizukuProvisioningActivityTest {
             assertFalse(visible.contains(activity.getString(R.string.shizuku_card_apply)))
             assertTrue(visible.contains(activity.getString(R.string.shizuku_card_activate)))
             assertFalse(visible.contains(activity.getString(R.string.shizuku_card_reload)))
-            assertFalse(visible.contains(activity.getString(R.string.device_capabilities)))
+            assertTrue(visible.contains(activity.getString(R.string.device_capabilities)))
             assertFalse(visible.any { it.startsWith(activity.getString(R.string.shizuku_card_source_file)) })
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun ordinarySetupCanOpenDeviceChecksAfterFailureButNotWhileBusy() {
+        val controller = Robolectric.buildActivity(ShizukuProvisioningActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val model = ViewModelProvider(activity)[ShizukuProbeModel::class.java]
+            val failed = ShizukuProbeModel.Screen(connection = ShizukuProbeModel.Connection.READY,
+                provision = NfcProvisionWorkflow.Result(NfcProvisionWorkflow.State.FAILED))
+            val screen = model.screen as MutableLiveData<ShizukuProbeModel.Screen>
+            screen.value = failed
+            val check = views(activity.findViewById(android.R.id.content)).filterIsInstance<MaterialButton>()
+                .single { it.text == activity.getString(R.string.device_capabilities) }
+            assertTrue(visible(check))
+            assertTrue(check.isEnabled)
+            screen.value = failed.copy(working = true)
+            assertTrue(visible(check))
+            assertFalse(check.isEnabled)
+            screen.value = failed
+            assertTrue(check.isEnabled)
+            check.performClick()
+            assertEquals(DeviceCapabilitiesActivity::class.java.name,
+                shadowOf(activity).nextStartedActivity.component?.className)
+            assertTrue(activity.getSharedPreferences("shizuku_nfc_provision", Context.MODE_PRIVATE).all.isEmpty())
         } finally { controller.pause().stop().destroy() }
     }
 
