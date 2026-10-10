@@ -22,21 +22,34 @@ internal class HceSession(private val context: Context) {
     }
 
     private val component = ComponentName(context, AimeHostService::class.java)
-    // Keep a known-good adapter across NFC service restarts. Calling isEnabled() on this
-    // instance activates Android's built-in dead-service recovery and refreshes the NFC-F
-    // Binder, while a fresh getDefaultAdapter() call can remain null through a cached
-    // NfcManager on some vendor builds.
+    // Retain the adapter for Android's adapter-level recovery. Some vendor builds keep
+    // a separate stale NFC-F Binder, so this does not guarantee NFC-F recovery.
     private var adapter: NfcAdapter? = runCatching {
         NfcAdapter.getDefaultAdapter(context)
     }.getOrNull()
 
-    fun activate(activity: Activity, profile: CardProfile, compatibilityMode: Boolean): Report =
-        activateProfile(
-            activity,
-            profile.profileId,
-            profile.routedIdm(compatibilityMode),
-            SYSTEM_CODE
+    fun activate(
+        activity: Activity,
+        profile: CardProfile,
+        systemCode: String = SYSTEM_CODE
+    ): Report = activateProfile(
+        activity,
+        profile.profileId,
+        profile.idm,
+        systemCode
+    )
+
+    fun activatePersistedRoute(
+        activity: Activity,
+        nfcid2: String,
+        systemCode: String = SYSTEM_CODE
+    ): PersistedHceRouteWorkflow.Result {
+        val workflow = PersistedHceRouteWorkflow(
+            backend = androidBackend(activity, component),
+            failureReporter = ::persistedRouteFailure
         )
+        return workflow.activate(nfcid2, systemCode)
+    }
 
     private fun activateProfile(
         activity: Activity,
@@ -60,7 +73,12 @@ internal class HceSession(private val context: Context) {
     private fun androidBackend(
         activity: Activity,
         serviceComponent: ComponentName
-    ): HceActivationWorkflow.Backend = object : HceActivationWorkflow.Backend {
+    ): AndroidHceBackend = AndroidHceBackend(activity, serviceComponent)
+
+    private inner class AndroidHceBackend(
+        private val activity: Activity,
+        private val serviceComponent: ComponentName
+    ) : HceActivationWorkflow.Backend, PersistedHceRouteWorkflow.Backend {
         private var activeAdapter: NfcAdapter? = null
         private var cachedManager: NfcFCardEmulation? = null
 
@@ -88,6 +106,12 @@ internal class HceSession(private val context: Context) {
 
         override fun registerSystemCode(systemCode: String): Boolean =
             manager().registerSystemCodeForService(serviceComponent, systemCode)
+
+        override fun currentSystemCode(): String? =
+            manager().getSystemCodeForService(serviceComponent)
+
+        override fun currentNfcid2(): String? =
+            manager().getNfcid2ForService(serviceComponent)
 
         override fun enable(): Boolean = manager().enableService(activity, serviceComponent)
 
@@ -123,6 +147,20 @@ internal class HceSession(private val context: Context) {
                 ?.let { "${cause.javaClass.simpleName}: $it" }
                 ?: cause.javaClass.simpleName
             report(Stage.EXCEPTION, detail)
+        }
+    }
+
+    private fun persistedRouteFailure(error: RuntimeException): PersistedHceRouteWorkflow.Result {
+        val report = runtimeFailure(error)
+        return if (report.stage == Stage.SERVICE_RESTARTING) {
+            PersistedHceRouteWorkflow.Result(
+                PersistedHceRouteWorkflow.Outcome.SERVICE_RESTARTING
+            )
+        } else {
+            PersistedHceRouteWorkflow.Result(
+                PersistedHceRouteWorkflow.Outcome.ERROR,
+                report.detail
+            )
         }
     }
 

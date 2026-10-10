@@ -10,14 +10,10 @@ internal data class CardProfile(
     val idBlock: String? = null,
     val accessCode: String? = null
 ) {
-    fun routedIdm(compatibilityMode: Boolean): String =
-        if (compatibilityMode) COMPATIBILITY_IDM else idm
-
     fun formattedAccessCode(): String? = accessCode?.chunked(4)?.joinToString(" ")
 
     companion object {
         const val DEFAULT_IDM = "02FE000000000000"
-        const val COMPATIBILITY_IDM = "02FE001145141919"
 
         fun create(
             label: String,

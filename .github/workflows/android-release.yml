@@ -40,11 +40,11 @@ jobs:
           test -s "$release_keystore"
           echo "AIMESIM_RELEASE_KEYSTORE=$release_keystore" >> "$GITHUB_ENV"
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6

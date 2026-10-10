@@ -43,6 +43,7 @@ internal object FelicaCodec {
         }
 
         val count = frame[servicesEnd].toInt() and 0xFF
+        if (count == 0) return null
         var cursor = servicesEnd + 1
         val blocks = ArrayList<BlockAddress>(count)
         repeat(count) {
@@ -85,8 +86,8 @@ internal object FelicaCodec {
         return response(READ_RESPONSE, nfcid2, body)
     }
 
-    fun writeResponse(nfcid2: ByteArray): ByteArray =
-        response(WRITE_RESPONSE, nfcid2, byteArrayOf(0, 0))
+    fun writeResponse(nfcid2: ByteArray, status1: Int = 0, status2: Int = 0): ByteArray =
+        response(WRITE_RESPONSE, nfcid2, byteArrayOf(status1.toByte(), status2.toByte()))
 
     private fun response(command: Byte, nfcid2: ByteArray, body: ByteArray): ByteArray {
         require(nfcid2.size == 8)

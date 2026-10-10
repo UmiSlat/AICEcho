@@ -24,8 +24,8 @@ android {
         applicationId = 'io.github.umislat.aimesimulator'
         minSdk = 29
         targetSdk = 36
-        versionCode = 25
-        versionName = '2.2.5'
+        versionCode = 45
+        versionName = '3.0.0'
         testInstrumentationRunner = 'androidx.test.runner.AndroidJUnitRunner'
 
         externalNativeBuild {
@@ -72,11 +72,17 @@ android {
     buildFeatures {
         buildConfig = true
         prefab = true
+        aidl = true
+    }
+
+    testOptions {
+        unitTests.includeAndroidResources = true
     }
 
     packaging {
         resources {
             merges += 'META-INF/xposed/*'
+            merges += ['META-INF/LICENSE', 'META-INF/LICENSE.txt', 'META-INF/NOTICE', 'META-INF/NOTICE.txt']
         }
         jniLibs {
             useLegacyPackaging = true
@@ -99,6 +105,9 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'io.github.vvb2060.ndk:dobby:1.2'
+    implementation 'dev.rikka.shizuku:api:13.1.5'
+    implementation 'dev.rikka.shizuku:provider:13.1.5'
+    implementation 'org.apache.commons:commons-compress:1.28.0'
 
     compileOnly('io.github.libxposed:api:101.0.0') {
         transitive = false
@@ -106,6 +115,7 @@ dependencies {
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
 }

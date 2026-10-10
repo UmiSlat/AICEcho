@@ -34,6 +34,15 @@ class FelicaCodecTest {
         assertEquals("02FE123456789ABC", HexCodec.encode(decoded.blocks[1].copyOfRange(0, 8)))
     }
 
+    @Test fun cardImageUsesAimeSystemCodeInBlock85() {
+        val profile = requireNotNull(CardProfile.create("Synthetic", "012E112233445566"))
+
+        assertEquals(
+            "88B40000000000000000000000000000",
+            HexCodec.encode(requireNotNull(CardImage(profile).read(0x85)))
+        )
+    }
+
     @Test fun rejectsReadFramesThatCannotFitInOneByteLength() {
         val blocks = List(FelicaCodec.MAX_READ_BLOCKS + 1) { ByteArray(16) }
 
@@ -49,6 +58,13 @@ class FelicaCodecTest {
         val profile = requireNotNull(CardProfile.create("Captured", "02FE123456789ABC"))
 
         assertNull(CardImage(profile).read(0xFF))
+    }
+
+    @Test fun encodesReadOnlyWriteFailure() {
+        val response = FelicaCodec.writeResponse(idm, 0x01, 0xA8)
+        assertEquals(0x09, response[1].toInt())
+        assertArrayEquals(idm, response.copyOfRange(2, 10))
+        assertArrayEquals(byteArrayOf(0x01, 0xA8.toByte()), response.copyOfRange(10, 12))
     }
 
     @Test fun rejectsTruncatedFrame() {

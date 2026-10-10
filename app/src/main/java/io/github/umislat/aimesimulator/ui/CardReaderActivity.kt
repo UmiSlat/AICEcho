@@ -12,6 +12,7 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import io.github.umislat.aimesimulator.R
+import io.github.umislat.aimesimulator.data.CardStore
 import io.github.umislat.aimesimulator.nfc.PhysicalCardReader
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -56,7 +57,10 @@ class CardReaderActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
                 topMargin = dp(24)
             })
         }
-        root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(android.widget.ScrollView(this).apply {
+            isFillViewport = true
+            addView(content)
+        }, LinearLayout.LayoutParams(-1, 0, 1f))
         setInsetAwareContentView(root)
     }
 
@@ -90,53 +94,27 @@ class CardReaderActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
     override fun onTagDiscovered(tag: Tag) {
         if (!reading.compareAndSet(false, true)) return
-        when (val recognition = PhysicalCardReader.recognizeAccessCode(tag)) {
-            is PhysicalCardReader.AccessCodeRecognition.FelicaAic -> showFelicaRecognition(
-                recognition.idm,
-                recognition.systemCode,
-                recognition.spad0,
-                recognition.idBlock,
-                recognition.accessCode
-            )
-            is PhysicalCardReader.AccessCodeRecognition.MifareAime -> showMifareRecognition(
+        when (val recognition = PhysicalCardReader.readCard(tag)) {
+            is PhysicalCardReader.ReadResult.Felica -> showFelicaCapture(recognition.capture)
+            is PhysicalCardReader.ReadResult.MifareAime -> showMifareRecognition(
                 recognition.uid,
                 recognition.accessCode
             )
-            PhysicalCardReader.AccessCodeRecognition.FelicaNotAmusementIc -> {
-                val capture = PhysicalCardReader.capture(tag)
-                if (capture == null) showRetry(R.string.card_read_failed)
-                else completeFelicaCapture(capture)
-            }
-            PhysicalCardReader.AccessCodeRecognition.FelicaInvalidAccessCode -> showRetry(
-                R.string.felica_access_code_invalid
+            PhysicalCardReader.ReadResult.FelicaReadFailed -> showRetry(
+                R.string.card_read_failed
             )
-            PhysicalCardReader.AccessCodeRecognition.FelicaReadFailed -> showRetry(
-                R.string.felica_access_code_read_failed
-            )
-            PhysicalCardReader.AccessCodeRecognition.MifareAuthenticationFailed -> showRetry(
+            PhysicalCardReader.ReadResult.MifareAuthenticationFailed -> showRetry(
                 R.string.mifare_authentication_failed
             )
-            PhysicalCardReader.AccessCodeRecognition.MifareInvalidAccessCode -> showRetry(
+            PhysicalCardReader.ReadResult.MifareInvalidAccessCode -> showRetry(
                 R.string.mifare_access_code_invalid
             )
-            PhysicalCardReader.AccessCodeRecognition.MifareReadFailed -> showRetry(
+            PhysicalCardReader.ReadResult.MifareReadFailed -> showRetry(
                 R.string.mifare_read_failed
             )
-            PhysicalCardReader.AccessCodeRecognition.UnsupportedCardTechnology -> showRetry(
+            PhysicalCardReader.ReadResult.UnsupportedCardTechnology -> showRetry(
                 R.string.access_code_card_unsupported
             )
-        }
-    }
-
-    private fun completeFelicaCapture(capture: PhysicalCardReader.Capture) {
-        runOnUiThread {
-            setResult(Activity.RESULT_OK, Intent().apply {
-                putExtra(EXTRA_IDM, capture.idm)
-                putExtra(EXTRA_SYSTEM_CODE, capture.systemCode)
-                putExtra(EXTRA_SPAD0, capture.spad0)
-                putExtra(EXTRA_ID_BLOCK, capture.idBlock)
-            })
-            finish()
         }
     }
 
@@ -147,43 +125,38 @@ class CardReaderActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
             recognitionComplete = true
             adapter?.disableReaderMode(this)
             progress.visibility = View.GONE
-            status.text = getString(
+            status.text = if (CardStore(this).advancedMode()) getString(
                 R.string.mifare_access_code_recognized,
                 formattedUid,
                 formattedAccessCode
-            )
+            ) else getString(R.string.mifare_card_read_simple, formattedAccessCode)
             showUseResultButton(Intent().apply {
                 putExtra(EXTRA_ACCESS_CODE, accessCode)
             })
         }
     }
 
-    private fun showFelicaRecognition(
-        idm: String,
-        systemCode: String,
-        spad0: String,
-        idBlock: String?,
-        accessCode: String
-    ) {
-        val formattedIdm = idm.chunked(2).joinToString(" ")
-        val formattedSystemCode = systemCode.chunked(2).joinToString(" ").ifBlank { "--" }
-        val formattedAccessCode = accessCode.chunked(4).joinToString(" ")
+    private fun showFelicaCapture(capture: PhysicalCardReader.Capture) {
+        val formattedIdm = capture.idm.chunked(2).joinToString(" ")
+        val formattedSystemCode = capture.systemCode.chunked(2).joinToString(" ").ifBlank { "--" }
         runOnUiThread {
             recognitionComplete = true
             adapter?.disableReaderMode(this)
             progress.visibility = View.GONE
-            status.text = getString(
-                R.string.felica_access_code_recognized,
+            status.text = if (CardStore(this).advancedMode()) getString(
+                R.string.felica_card_read,
                 formattedIdm,
                 formattedSystemCode,
-                formattedAccessCode
-            )
+                capture.spad0?.chunked(4)?.joinToString(" ")
+                    ?: getString(R.string.card_details_not_saved),
+                capture.idBlock?.chunked(4)?.joinToString(" ")
+                    ?: getString(R.string.card_details_not_saved)
+            ) else getString(R.string.felica_card_read_simple)
             showUseResultButton(Intent().apply {
-                putExtra(EXTRA_IDM, idm)
-                putExtra(EXTRA_SYSTEM_CODE, systemCode)
-                putExtra(EXTRA_SPAD0, spad0)
-                putExtra(EXTRA_ID_BLOCK, idBlock)
-                putExtra(EXTRA_ACCESS_CODE, accessCode)
+                putExtra(EXTRA_IDM, capture.idm)
+                putExtra(EXTRA_SYSTEM_CODE, capture.systemCode)
+                putExtra(EXTRA_SPAD0, capture.spad0)
+                putExtra(EXTRA_ID_BLOCK, capture.idBlock)
             })
         }
     }

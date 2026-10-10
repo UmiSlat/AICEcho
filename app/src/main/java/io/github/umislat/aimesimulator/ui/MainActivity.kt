@@ -23,9 +23,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -55,6 +52,7 @@ import io.github.umislat.aimesimulator.nfc.DefaultNfcAppPolicy
 import io.github.umislat.aimesimulator.nfc.HceActivationRetryPolicy
 import io.github.umislat.aimesimulator.nfc.HceSession
 import io.github.umislat.aimesimulator.nfc.NfcAdapterStatePolicy
+import io.github.umislat.aimesimulator.nfc.RootlessAssessment
 import io.github.umislat.aimesimulator.root.PmmManager
 import java.io.ByteArrayOutputStream
 import java.text.DateFormat
@@ -76,10 +74,12 @@ class MainActivity : AppCompatActivity() {
     private var nfcStateReceiverRegistered = false
     private var activationRetry: Runnable? = null
     private var hceStatusText: CharSequence = ""
-    private var lastHceReport: HceSession.Report? = null
     private var cardPageStatusView: TextView? = null
     private var statusPageStatusView: TextView? = null
     private var hceRetryAction: MaterialButton? = null
+    private var lastHceReport: HceSession.Report? = null
+    private var rootlessStatusView: TextView? = null
+    private var rootlessDetailView: TextView? = null
 
     private val nfcStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -150,7 +150,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         foreground = true
         registerNfcStateReceiver()
-        activateSelected()
+        if (hasResumed) showPage(selectedTab, refreshPmm = false)
+        activateConfiguredRoute()
         if (hasResumed && selectedTab == TAB_STATUS) refreshPmm()
         hasResumed = true
         refreshDefaultNfcAppStatus()
@@ -160,7 +161,7 @@ class MainActivity : AppCompatActivity() {
         foreground = false
         unregisterNfcStateReceiver()
         cancelActivationRetry()
-        session.deactivate(this)
+        if (!store.persistedRouteOnlyMode()) session.deactivate(this)
         super.onPause()
     }
 
@@ -200,9 +201,10 @@ class MainActivity : AppCompatActivity() {
                 lastHceReport = HceSession.Report(HceSession.Stage.SERVICE_RESTARTING)
                 setHceStatus(getString(R.string.hce_waiting_for_service))
             }
-            NfcAdapterStatePolicy.Action.ACTIVATE -> activateSelected()
+            NfcAdapterStatePolicy.Action.ACTIVATE -> activateConfiguredRoute()
             NfcAdapterStatePolicy.Action.IGNORE -> return
         }
+        renderRootlessAssessment()
         refreshDefaultNfcAppStatus()
     }
 
@@ -248,6 +250,8 @@ class MainActivity : AppCompatActivity() {
         cardPageStatusView = null
         statusPageStatusView = null
         hceRetryAction = null
+        rootlessStatusView = null
+        rootlessDetailView = null
         defaultNfcStatusView = null
         defaultNfcAction = null
         pmmSwitch = null
@@ -271,6 +275,7 @@ class MainActivity : AppCompatActivity() {
         )
         updateHceStatusViews()
         if (tab == TAB_STATUS) {
+            renderRootlessAssessment()
             renderDefaultNfcAppStatus()
             pmmSnapshot?.let(::renderPmm)
             if (refreshPmm) refreshPmm()
@@ -281,7 +286,8 @@ class MainActivity : AppCompatActivity() {
         val page = FrameLayout(this)
         val scroll = ScrollView(this).apply { isFillViewport = true }
         val content = verticalLayout(this)
-        content.addView(statusSummaryCard())
+        content.addView(statusSummary())
+        content.addView(emulationActions())
 
         val profiles = store.profiles()
         content.addView(LinearLayout(this).apply {
@@ -325,39 +331,31 @@ class MainActivity : AppCompatActivity() {
         return page
     }
 
-    private fun statusSummaryCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(CARD_RADIUS_DP).toFloat()
-        strokeWidth = dp(1)
+    private fun statusSummary(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
         isClickable = true
         isFocusable = true
         setOnClickListener { bottomNavigation.selectedItemId = TAB_STATUS }
-        addView(LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            addView(TextView(this@MainActivity).apply {
-                setText(R.string.simulation_status)
-                textSize = 13f
-                alpha = 0.7f
-            })
-            cardPageStatusView = TextView(this@MainActivity).apply {
-                textSize = 18f
-                setTypeface(typeface, Typeface.BOLD)
-                setPadding(0, dp(6), 0, 0)
-            }
-            addView(cardPageStatusView)
-            store.selectedProfile()?.let { profile ->
-                addView(TextView(this@MainActivity).apply {
-                    text = getString(
-                        if (store.compatibilityMode()) R.string.status_profile_compatibility
-                        else R.string.status_profile_normal,
-                        profile.label
-                    )
-                    textSize = 13f
-                    alpha = 0.72f
-                    setPadding(0, dp(8), 0, 0)
-                })
-            }
+        setPadding(dp(4), dp(12), dp(4), dp(12))
+        addView(TextView(this@MainActivity).apply {
+            setText(R.string.simulation_status)
+            textSize = 13f
+            alpha = 0.7f
         })
+        cardPageStatusView = TextView(this@MainActivity).apply {
+            textSize = 18f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, dp(6), 0, 0)
+        }
+        addView(cardPageStatusView)
+        store.selectedProfile()?.let { profile ->
+            addView(TextView(this@MainActivity).apply {
+                text = getString(R.string.current_card_summary, profile.label)
+                textSize = 13f
+                alpha = 0.72f
+                setPadding(0, dp(8), 0, 0)
+            })
+        }
     }
 
     private fun profileCard(profile: CardProfile, selected: Boolean): MaterialCardView =
@@ -371,7 +369,7 @@ class MainActivity : AppCompatActivity() {
             radius = dp(CARD_RADIUS_DP).toFloat()
             setOnClickListener {
                 store.select(profile.profileId)
-                activateSelected()
+                activateConfiguredRoute()
                 showPage(TAB_CARDS, refreshPmm = false)
             }
             layoutParams = ViewGroup.MarginLayoutParams(-1, -2).apply {
@@ -398,6 +396,7 @@ class MainActivity : AppCompatActivity() {
                     })
                 })
                 addView(TextView(this@MainActivity).apply {
+                    visibility = if (store.advancedMode()) View.VISIBLE else View.GONE
                     text = if (store.showIdm()) getString(R.string.idm_value, profile.idm)
                     else getString(R.string.idm_hidden)
                     textSize = 14f
@@ -418,6 +417,9 @@ class MainActivity : AppCompatActivity() {
                 }
                 addView(LinearLayout(this@MainActivity).apply {
                     gravity = Gravity.END
+                    addView(compactTextButton(R.string.card_details).apply {
+                        setOnClickListener { showCardDetails(profile) }
+                    })
                     addView(compactTextButton(R.string.edit).apply {
                         setOnClickListener { showEditor(profile) }
                     })
@@ -431,181 +433,208 @@ class MainActivity : AppCompatActivity() {
     private fun buildStatusPage(): View {
         val scroll = ScrollView(this).apply { isFillViewport = true }
         val content = verticalLayout(this)
+        content.addView(sectionTitle(R.string.emulation_method))
+        content.addView(emulationMethodSelector())
         content.addView(sectionTitle(R.string.simulation_status))
-        content.addView(MaterialCardView(this).apply {
-            radius = dp(CARD_RADIUS_DP).toFloat()
-            strokeWidth = dp(1)
-            addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(18), dp(16), dp(18), dp(16))
-                statusPageStatusView = TextView(this@MainActivity).apply {
-                    textSize = 18f
-                    setTypeface(typeface, Typeface.BOLD)
-                }
-                addView(statusPageStatusView)
-                addView(TextView(this@MainActivity).apply {
-                    setText(R.string.hce_status_summary)
-                    textSize = 13f
-                    alpha = 0.7f
-                    setPadding(0, dp(6), 0, 0)
-                })
-                store.selectedProfile()?.let { profile ->
-                    addView(TextView(this@MainActivity).apply {
-                        text = getString(
-                            R.string.current_identity_summary,
-                            profile.label,
-                            if (store.showIdm()) profile.routedIdm(store.compatibilityMode())
-                            else getString(R.string.hidden_value)
-                        )
-                        textSize = 14f
-                        setTypeface(typeface, Typeface.BOLD)
-                        setPadding(0, dp(12), 0, 0)
-                    })
-                }
-                val retryAction = MaterialButton(
-                    this@MainActivity,
-                    null,
-                    com.google.android.material.R.attr.materialButtonOutlinedStyle
-                ).apply {
-                    setText(R.string.hce_retry_registration)
-                    visibility = hceRetryActionVisibility()
-                    setOnClickListener { recreate() }
-                }
-                hceRetryAction = retryAction
-                addView(retryAction, LinearLayout.LayoutParams(-1, -2).apply {
-                    topMargin = dp(10)
-                })
-            })
-        })
-        content.addView(sectionTitle(R.string.route_mode))
-        content.addView(compatibilityModeSelector())
-        content.addView(TextView(this).apply {
-            setText(R.string.compatibility_mode_summary)
-            textSize = 13f
-            alpha = 0.72f
-            setPadding(0, 0, 0, dp(8))
-        })
-        content.addView(sectionTitle(R.string.system_requirements))
-        content.addView(defaultNfcAppCard())
-        content.addView(pmmCard().apply { applyMargins(vertical = 6) })
-        scroll.addView(content)
-        return scroll
-    }
-
-    private fun compatibilityModeSelector(): MaterialButtonToggleGroup {
-        val normalId = View.generateViewId()
-        val compatibilityId = View.generateViewId()
-        return MaterialButtonToggleGroup(this).apply {
-            isSingleSelection = true
-            isSelectionRequired = true
-            addView(statusModeButton(normalId, R.string.normal_mode))
-            addView(statusModeButton(compatibilityId, R.string.compatibility_mode))
-            check(if (store.compatibilityMode()) compatibilityId else normalId)
-            addOnButtonCheckedListener { _, checkedId, isChecked ->
-                if (!isChecked) return@addOnButtonCheckedListener
-                val compatibilityEnabled = checkedId == compatibilityId
-                if (compatibilityEnabled == store.compatibilityMode()) {
-                    return@addOnButtonCheckedListener
-                }
-                store.setCompatibilityMode(compatibilityEnabled)
-                activateSelected()
-                showPage(TAB_STATUS, refreshPmm = false)
-            }
-        }
-    }
-
-    private fun statusModeButton(id: Int, @androidx.annotation.StringRes label: Int): MaterialButton =
-        MaterialButton(
-            this,
-            null,
-            com.google.android.material.R.attr.materialButtonOutlinedStyle
-        ).apply {
-            this.id = id
-            setText(label)
-            textSize = 12f
-            maxLines = 2
-            minWidth = 0
-            minimumWidth = 0
-            minHeight = dp(48)
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
-        }
-
-    private fun defaultNfcAppCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(CARD_RADIUS_DP).toFloat()
-        strokeWidth = dp(1)
-        addView(LinearLayout(this@MainActivity).apply {
+        content.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(14))
-            addView(TextView(this@MainActivity).apply {
-                setText(R.string.default_nfc_app)
-                textSize = 16f
+            setPadding(dp(4), dp(8), dp(4), dp(12))
+            statusPageStatusView = TextView(this@MainActivity).apply {
+                textSize = 18f
                 setTypeface(typeface, Typeface.BOLD)
-            })
-            defaultNfcStatusView = TextView(this@MainActivity).apply {
-                textSize = 14f
-                setPadding(0, dp(6), 0, 0)
             }
-            addView(defaultNfcStatusView)
-            defaultNfcAction = MaterialButton(
+            addView(statusPageStatusView)
+            addView(TextView(this@MainActivity).apply {
+                visibility = if (store.advancedMode()) View.VISIBLE else View.GONE
+                setText(R.string.hce_status_summary)
+                textSize = 13f
+                alpha = 0.7f
+                setPadding(0, dp(6), 0, 0)
+            })
+            store.selectedProfile()?.let { profile ->
+                addView(TextView(this@MainActivity).apply {
+                    text = if (!store.advancedMode()) {
+                        getString(R.string.current_card_summary, profile.label)
+                    } else getString(
+                        R.string.current_identity_summary,
+                        profile.label,
+                        if (store.showIdm()) profile.idm
+                        else getString(R.string.hidden_value)
+                    )
+                    textSize = 14f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setPadding(0, dp(12), 0, 0)
+                })
+            }
+            if (store.advancedMode()) {
+                rootlessStatusView = TextView(this@MainActivity).apply {
+                    textSize = 15f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setPadding(0, dp(14), 0, 0)
+                }
+                addView(rootlessStatusView)
+                rootlessDetailView = TextView(this@MainActivity).apply {
+                    textSize = 13f
+                    alpha = 0.76f
+                    setPadding(0, dp(4), 0, 0)
+                }
+                addView(rootlessDetailView)
+            }
+            val retryAction = MaterialButton(
                 this@MainActivity,
                 null,
                 com.google.android.material.R.attr.materialButtonOutlinedStyle
             ).apply {
-                setOnClickListener { handleDefaultNfcAction() }
+                setText(R.string.hce_retry_registration)
+                visibility = hceRetryActionVisibility()
+                setOnClickListener { recreate() }
             }
-            addView(defaultNfcAction, LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(8)
+            hceRetryAction = retryAction
+            addView(retryAction, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(10)
             })
         })
+        content.addView(sectionTitle(R.string.system_requirements))
+        content.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            setText(R.string.device_capabilities)
+            setIconResource(R.drawable.ic_nav_status)
+            setOnClickListener { startActivity(Intent(this@MainActivity, DeviceCapabilitiesActivity::class.java)) }
+        }, LinearLayout.LayoutParams(-1, -2))
+        content.addView(defaultNfcAppSection())
+        if (!store.persistedRouteOnlyMode()) content.addView(pmmSection().apply { applyMargins(vertical = 6) })
+        scroll.addView(content)
+        return scroll
     }
-    private fun pmmCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(CARD_RADIUS_DP).toFloat()
-        strokeWidth = dp(1)
-        addView(LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(12), dp(18), dp(16))
-            pmmProgress = LinearProgressIndicator(this@MainActivity).apply {
-                isIndeterminate = true
-                hide()
-            }
-            addView(pmmProgress, LinearLayout.LayoutParams(-1, dp(4)))
-            pmmSwitch = MaterialSwitch(this@MainActivity).apply {
-                setText(R.string.enable_pmm_patch)
-                isEnabled = false
-                setOnCheckedChangeListener { button, enabled ->
-                    if (button.isPressed) changePmm(enabled)
+
+    private fun emulationActions(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, dp(8), 0, dp(12))
+        if (store.persistedRouteOnlyMode()) {
+            addView(MaterialButton(this@MainActivity).apply {
+                setText(R.string.emulation_start)
+                setIconResource(R.drawable.ic_read_nfc)
+                isEnabled = store.selectedProfile() != null
+                setOnClickListener {
+                    val selected = store.selectedProfile() ?: return@setOnClickListener
+                    startActivity(PersistedEmulationActivity.intent(this@MainActivity, selected.label,
+                        selected.idm, store.advancedMode()))
                 }
+            }, LinearLayout.LayoutParams(-1, -2))
+        }
+        addView(MaterialButton(this@MainActivity, null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            setText(R.string.emulation_setup)
+            setIconResource(R.drawable.ic_nav_status)
+            isEnabled = store.selectedProfile() != null
+            setOnClickListener { startActivity(Intent(this@MainActivity, ShizukuProvisioningActivity::class.java)) }
+        }, LinearLayout.LayoutParams(-1, -2))
+    }
+
+    private fun emulationMethodSelector(): MaterialButtonToggleGroup = MaterialButtonToggleGroup(this).apply {
+        isSingleSelection = true
+        isSelectionRequired = true
+        val modes = linkedMapOf<Int, Boolean>()
+        for ((persisted, label) in listOf(true to R.string.emulation_method_shizuku, false to R.string.emulation_method_module)) {
+            val button = MaterialButton(this@MainActivity, null,
+                com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                id = View.generateViewId()
+                setText(label)
+                maxLines = 2
+                minWidth = 0
+                minimumWidth = 0
             }
-            addView(pmmSwitch)
-            pmmStatus = TextView(this@MainActivity).apply {
-                setText(R.string.checking_status)
-                textSize = 14f
-                setPadding(0, dp(4), 0, dp(8))
+            modes[button.id] = persisted
+            addView(button, LinearLayout.LayoutParams(0, -2, 1f))
+            if (persisted == store.persistedRouteOnlyMode()) check(button.id)
+        }
+        addOnButtonCheckedListener { _, id, checked ->
+            val persisted = modes[id] ?: return@addOnButtonCheckedListener
+            if (!checked || persisted == store.persistedRouteOnlyMode()) return@addOnButtonCheckedListener
+            session.deactivate(this@MainActivity)
+            store.setPersistedRouteOnlyMode(persisted)
+            activateConfiguredRoute()
+            showPage(TAB_STATUS, refreshPmm = !persisted)
+        }
+    }
+
+    private fun defaultNfcAppSection(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(4), dp(14), dp(4), dp(14))
+        addView(TextView(this@MainActivity).apply {
+            setText(R.string.default_nfc_app)
+            textSize = 16f
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        defaultNfcStatusView = TextView(this@MainActivity).apply {
+            textSize = 14f
+            setPadding(0, dp(6), 0, 0)
+        }
+        addView(defaultNfcStatusView)
+        defaultNfcAction = MaterialButton(
+            this@MainActivity,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            setOnClickListener { handleDefaultNfcAction() }
+        }
+        addView(defaultNfcAction, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(8)
+        })
+    }
+
+    private fun pmmSection(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(4), dp(12), dp(4), dp(16))
+        pmmProgress = LinearProgressIndicator(this@MainActivity).apply {
+            isIndeterminate = true
+            hide()
+        }
+        addView(pmmProgress, LinearLayout.LayoutParams(-1, dp(4)))
+        pmmSwitch = MaterialSwitch(this@MainActivity).apply {
+            setText(if (store.advancedMode()) R.string.enable_pmm_patch else R.string.compatibility_patch)
+            isEnabled = false
+            setOnCheckedChangeListener { button, enabled ->
+                if (button.isPressed) changePmm(enabled)
             }
-            addView(pmmStatus)
-            addView(TextView(this@MainActivity).apply {
-                setText(R.string.pmm_explanation)
-                textSize = 13f
-                alpha = 0.72f
-            })
+        }
+        addView(pmmSwitch)
+        pmmStatus = TextView(this@MainActivity).apply {
+            setText(R.string.checking_status)
+            textSize = 14f
+            setPadding(0, dp(4), 0, dp(8))
+        }
+        addView(pmmStatus)
+        addView(TextView(this@MainActivity).apply {
+            visibility = if (store.advancedMode()) View.VISIBLE else View.GONE
+            setText(R.string.pmm_explanation)
+            textSize = 13f
+            alpha = 0.72f
         })
     }
 
     private fun buildSettingsPage(): View {
         val scroll = ScrollView(this).apply { isFillViewport = true }
         val content = verticalLayout(this)
+        content.addView(MaterialSwitch(this).apply {
+            setText(R.string.advanced_mode)
+            isChecked = store.advancedMode()
+            setOnCheckedChangeListener { _, enabled ->
+                if (enabled == store.advancedMode()) return@setOnCheckedChangeListener
+                store.setAdvancedMode(enabled)
+                showPage(TAB_SETTINGS, refreshPmm = false)
+            }
+        })
         content.addView(sectionTitle(R.string.appearance))
         val dynamicAvailable = DynamicColors.isDynamicColorAvailable()
-        content.addView(settingsGroupCard().apply {
-            val group = getChildAt(0) as LinearLayout
-            group.addView(TextView(this@MainActivity).apply {
+        content.addView(settingsGroup().apply {
+            addView(TextView(this@MainActivity).apply {
                 setText(R.string.theme_mode)
                 textSize = 15f
                 setTypeface(typeface, Typeface.BOLD)
                 setPadding(0, 0, 0, dp(8))
             })
-            group.addView(buildThemeSelector())
-            group.addView(MaterialSwitch(this@MainActivity).apply {
+            addView(buildThemeSelector())
+            addView(MaterialSwitch(this@MainActivity).apply {
                 setText(R.string.dynamic_colors)
                 isChecked = dynamicAvailable &&
                     ThemeSettings.dynamicColorsEnabled(this@MainActivity)
@@ -618,33 +647,29 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             })
-            group.addView(settingsSummary(
-                if (dynamicAvailable) R.string.dynamic_colors_summary
-                else R.string.dynamic_colors_unavailable
-            ))
+            if (!dynamicAvailable) addView(settingsSummary(R.string.dynamic_colors_unavailable))
         })
 
         content.addView(sectionTitle(R.string.card_data))
-        content.addView(cardDataSettingsCard())
+        content.addView(cardDataSettings())
 
         content.addView(sectionTitle(R.string.privacy))
-        content.addView(settingsGroupCard().apply {
-            val group = getChildAt(0) as LinearLayout
-            group.addView(MaterialSwitch(this@MainActivity).apply {
+        content.addView(settingsGroup().apply {
+            addView(MaterialSwitch(this@MainActivity).apply {
+                visibility = if (store.advancedMode()) View.VISIBLE else View.GONE
                 setText(R.string.show_idm)
                 isChecked = store.showIdm()
                 setOnCheckedChangeListener { button, value ->
                     if (button.isPressed) store.setShowIdm(value)
                 }
             })
-            group.addView(MaterialSwitch(this@MainActivity).apply {
+            addView(MaterialSwitch(this@MainActivity).apply {
                 setText(R.string.show_access_code)
                 isChecked = store.showAccessCode()
                 setOnCheckedChangeListener { button, value ->
                     if (button.isPressed) store.setShowAccessCode(value)
                 }
             })
-            group.addView(settingsSummary(R.string.profile_visibility_summary))
         })
 
         content.addView(sectionTitle(R.string.application_section))
@@ -662,14 +687,9 @@ class MainActivity : AppCompatActivity() {
         return scroll
     }
 
-    private fun settingsGroupCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(CARD_RADIUS_DP).toFloat()
-        strokeWidth = dp(1)
-        cardElevation = 0f
-        addView(LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(14))
-        })
+    private fun settingsGroup(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(4), dp(4), dp(4), dp(12))
     }
 
     private fun settingsSummary(@androidx.annotation.StringRes text: Int): TextView =
@@ -680,26 +700,20 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(4), 0, 0)
         }
 
-    private fun cardDataSettingsCard(): MaterialCardView = settingsGroupCard().apply {
-        val group = getChildAt(0) as LinearLayout
+    private fun cardDataSettings(): LinearLayout = settingsGroup().apply {
         val profiles = store.profiles()
         val count = resources.getQuantityString(
             R.plurals.card_profile_count,
             profiles.size,
             profiles.size
         )
-        group.addView(TextView(this@MainActivity).apply {
-            setText(R.string.card_data_local_title)
-            textSize = 16f
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        group.addView(TextView(this@MainActivity).apply {
+        addView(TextView(this@MainActivity).apply {
             text = getString(R.string.card_data_local_summary, count)
             textSize = 13f
             alpha = 0.76f
             setPadding(0, dp(5), 0, dp(10))
         })
-        group.addView(LinearLayout(this@MainActivity).apply {
+        addView(LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(backupActionButton(R.string.export_backup, R.drawable.ic_export).apply {
                 isEnabled = profiles.isNotEmpty()
@@ -823,6 +837,88 @@ class MainActivity : AppCompatActivity() {
         dialog.setOnShowListener { dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED }
         dialog.show()
     }
+
+    private fun showCardDetails(profile: CardProfile) {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            if (store.advancedMode()) {
+                addView(TextView(this@MainActivity).apply {
+                    setText(R.string.card_details_sensitive_summary)
+                    textSize = 13f
+                    alpha = 0.76f
+                    setPadding(0, 0, 0, dp(8))
+                })
+                addView(cardDetailLine(R.string.card_name, profile.label, monospace = false))
+                addView(cardDetailLine(R.string.card_details_profile_id, profile.profileId))
+                addView(cardDetailLine(
+                    R.string.card_details_original_idm,
+                    formatCardDetailHex(profile.idm)
+                ))
+                addView(cardDetailLine(
+                    R.string.access_code,
+                    profile.formattedAccessCode() ?: getString(R.string.card_details_not_saved)
+                ))
+                addView(cardDetailLine(
+                    R.string.spad0_optional,
+                    profile.spad0?.let(::formatCardDetailHex)
+                        ?: getString(R.string.card_details_not_saved)
+                ))
+                addView(cardDetailLine(
+                    R.string.id_block_optional,
+                    profile.idBlock?.let(::formatCardDetailHex)
+                        ?: getString(R.string.card_details_not_saved)
+                ))
+                addView(cardDetailLine(
+                    R.string.card_details_system_code,
+                    HceSession.SYSTEM_CODE
+                ))
+                addView(cardDetailLine(
+                    R.string.card_details_pmm,
+                    formatCardDetailHex(CardBackupCodec.PMM)
+                ))
+            } else {
+                addView(cardDetailLine(R.string.card_name, profile.label, monospace = false))
+                addView(cardDetailLine(
+                    R.string.access_code,
+                    profile.formattedAccessCode() ?: getString(R.string.card_details_not_saved)
+                ))
+            }
+        }
+        val scroll = androidx.core.widget.NestedScrollView(this).apply {
+            isFillViewport = true
+            setPadding(dp(20), 0, dp(20), 0)
+            addView(content)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.card_details_title)
+            .setView(scroll)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun cardDetailLine(
+        @androidx.annotation.StringRes label: Int,
+        value: String,
+        monospace: Boolean = true
+    ): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, dp(7), 0, dp(7))
+        addView(TextView(this@MainActivity).apply {
+            setText(label)
+            textSize = 12f
+            alpha = 0.68f
+        })
+        addView(TextView(this@MainActivity).apply {
+            text = value
+            textSize = 14f
+            setTextIsSelectable(true)
+            if (monospace) typeface = Typeface.MONOSPACE
+            setPadding(0, dp(2), 0, 0)
+        })
+    }
+
+    private fun formatCardDetailHex(value: String): String =
+        value.chunked(4).joinToString(" ")
 
     private fun confirmBackupExport() {
         MaterialAlertDialogBuilder(this)
@@ -1008,6 +1104,21 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    private fun activateConfiguredRoute(
+        attempt: Int = 0,
+        retryKind: ActivationRetryKind? = null
+    ) {
+        if (store.persistedRouteOnlyMode()) {
+            cancelActivationRetry()
+            lastHceReport = null
+            setHceStatus(getString(if (store.selectedProfile() == null)
+                R.string.select_or_add_card else R.string.emulation_stopped))
+            renderRootlessAssessment()
+        } else {
+            activateSelected(attempt, retryKind)
+        }
+    }
+
     private fun activateSelected(
         attempt: Int = 0,
         retryKind: ActivationRetryKind? = null
@@ -1015,12 +1126,14 @@ class MainActivity : AppCompatActivity() {
         cancelActivationRetry()
         val selected = store.selectedProfile()
         if (selected == null) {
+            session.deactivate(this)
             lastHceReport = null
             setHceStatus(getString(R.string.select_or_add_card))
+            renderRootlessAssessment()
             return
         }
         val previousReport = lastHceReport
-        val report = session.activate(this, selected, store.compatibilityMode())
+        val report = session.activate(this, selected)
         val likelyActiveLink = HceActivationRetryPolicy.isLikelyActiveLink(
             report,
             previousReport,
@@ -1064,10 +1177,11 @@ class MainActivity : AppCompatActivity() {
             HceSession.Stage.ENABLE -> getString(R.string.hce_enable_failed)
             HceSession.Stage.EXCEPTION -> getString(
                 R.string.hce_failed,
-                report.detail.ifBlank { getString(R.string.hce_unknown_error) }
+                report.detail.ifBlank { getString(R.string.rootless_unknown_error) }
             )
         }
         setHceStatus(message)
+        renderRootlessAssessment()
     }
 
     private fun setHceStatus(message: CharSequence) {
@@ -1076,19 +1190,75 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateHceStatusViews() {
-        cardPageStatusView?.text = hceStatusText
-        statusPageStatusView?.text = hceStatusText
+        val message = if (store.advancedMode()) hceStatusText else simpleHceStatus()
+        cardPageStatusView?.text = message
+        statusPageStatusView?.text = message
         hceRetryAction?.visibility = hceRetryActionVisibility()
+    }
+
+    private fun simpleHceStatus(): CharSequence = when (lastHceReport?.stage) {
+        HceSession.Stage.ID -> getString(R.string.simple_identity_rejected)
+        HceSession.Stage.SYSTEM_CODE -> getString(R.string.simple_card_type_rejected)
+        HceSession.Stage.ENABLE, HceSession.Stage.EXCEPTION ->
+            getString(R.string.simple_emulation_failed)
+        HceSession.Stage.UNSUPPORTED -> getString(R.string.simple_emulation_unsupported)
+        else -> hceStatusText
     }
 
     private fun hceRetryActionVisibility(): Int = if (
         lastHceReport?.stage == HceSession.Stage.LINK_ACTIVE && activationRetry == null
     ) View.VISIBLE else View.GONE
 
+    private fun renderRootlessAssessment() {
+        if (store.persistedRouteOnlyMode()) {
+            rootlessStatusView?.visibility = View.VISIBLE
+            rootlessDetailView?.visibility = View.VISIBLE
+            rootlessStatusView?.setText(R.string.persisted_route_only_title)
+            rootlessDetailView?.setText(R.string.persisted_route_only_detail)
+            return
+        }
+        val assessment = RootlessAssessment.from(
+            lastHceReport,
+            store.selectedProfile() != null
+        )
+        val showDiagnostic = assessment.outcome !=
+            RootlessAssessment.Outcome.REGISTRATION_ACCEPTED
+        rootlessStatusView?.visibility = if (showDiagnostic) View.VISIBLE else View.GONE
+        rootlessDetailView?.visibility = if (showDiagnostic) View.VISIBLE else View.GONE
+        val (title, detail) = when (assessment.outcome) {
+            RootlessAssessment.Outcome.PROFILE_REQUIRED ->
+                R.string.rootless_profile_required_title to R.string.rootless_profile_required_detail
+            RootlessAssessment.Outcome.REGISTRATION_ACCEPTED ->
+                R.string.rootless_accepted_title to R.string.rootless_accepted_normal_detail
+            RootlessAssessment.Outcome.UNSUPPORTED ->
+                R.string.rootless_unsupported_title to R.string.rootless_unsupported_detail
+            RootlessAssessment.Outcome.NFC_DISABLED ->
+                R.string.rootless_nfc_disabled_title to R.string.rootless_nfc_disabled_detail
+            RootlessAssessment.Outcome.SERVICE_RESTARTING ->
+                R.string.rootless_checking_title to R.string.rootless_checking_detail
+            RootlessAssessment.Outcome.LINK_ACTIVE ->
+                R.string.rootless_link_active_title to R.string.rootless_link_active_detail
+            RootlessAssessment.Outcome.DYNAMIC_ID_REJECTED ->
+                R.string.rootless_dynamic_id_title to R.string.rootless_dynamic_id_detail
+            RootlessAssessment.Outcome.SYSTEM_CODE_REJECTED ->
+                R.string.rootless_system_code_title to R.string.rootless_system_code_detail
+            RootlessAssessment.Outcome.ENABLE_FAILED ->
+                R.string.rootless_enable_title to R.string.rootless_enable_detail
+            RootlessAssessment.Outcome.ERROR ->
+                R.string.rootless_error_title to R.string.rootless_error_detail
+        }
+        rootlessStatusView?.setText(title)
+        rootlessDetailView?.text = if (assessment.outcome == RootlessAssessment.Outcome.ERROR) {
+            getString(detail, assessment.detail.ifBlank { getString(R.string.rootless_unknown_error) })
+        } else {
+            getString(detail)
+        }
+    }
+
     private fun scheduleActivationRetry(attempt: Int, kind: ActivationRetryKind) {
         activationRetry = Runnable {
             activationRetry = null
-            if (foreground) activateSelected(attempt, kind)
+            if (foreground) activateConfiguredRoute(attempt, kind)
         }.also {
             val delay = when (kind) {
                 ActivationRetryKind.SERVICE_RESTART -> SERVICE_RESTART_RETRY_DELAY_MS
@@ -1182,7 +1352,9 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun refreshPmm() = runPmm { PmmManager.inspect() }
+    private fun refreshPmm() {
+        if (!store.persistedRouteOnlyMode()) runPmm { PmmManager.inspect() }
+    }
 
     private fun changePmm(enabled: Boolean) = runPmm { PmmManager.setEnabled(enabled) }
 
@@ -1213,7 +1385,15 @@ class MainActivity : AppCompatActivity() {
         }
         val mode = if (snapshot.modernModule) getString(R.string.pmm_mode_module)
             else getString(R.string.pmm_mode_framework)
-        pmmStatus?.text = getString(R.string.pmm_status, mode, snapshot.detail)
+        pmmStatus?.text = if (store.advancedMode()) {
+            getString(R.string.pmm_status, mode, snapshot.detail)
+        } else getString(when (snapshot.status) {
+            PmmManager.Status.ACTIVE -> R.string.compatibility_patch_active
+            PmmManager.Status.WAITING -> R.string.compatibility_patch_waiting
+            PmmManager.Status.DISABLED -> R.string.compatibility_patch_disabled
+            PmmManager.Status.UNAVAILABLE -> R.string.compatibility_patch_unavailable
+            PmmManager.Status.ERROR -> R.string.compatibility_patch_error
+        })
     }
 
     private fun restorePmmSnapshot(state: Bundle?): PmmManager.Snapshot? {
@@ -1259,6 +1439,12 @@ class MainActivity : AppCompatActivity() {
             hex = false,
             numeric = true
         )
+        val advanced = store.advancedMode()
+        idm.layout.visibility = if (advanced || (initial == null && capturedIdm == null)) {
+            View.VISIBLE
+        } else View.GONE
+        spad0.layout.visibility = if (advanced) View.VISIBLE else View.GONE
+        idBlock.layout.visibility = if (advanced) View.VISIBLE else View.GONE
         val form = verticalLayout(this).apply {
             setPadding(dp(20), dp(10), dp(20), dp(12))
             listOf(name, accessCode, idm, spad0, idBlock).forEach { field ->
@@ -1275,47 +1461,34 @@ class MainActivity : AppCompatActivity() {
         ).apply { setText(android.R.string.cancel) }
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(20), dp(8), dp(20), dp(20))
+            setPadding(dp(20), dp(4), dp(20), dp(8))
             addView(cancel, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(6) })
             addView(save, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(6) })
         }
-        val scroll = androidx.core.widget.NestedScrollView(this).apply {
-            isFillViewport = true
-            addView(form)
-        }
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = ViewGroup.LayoutParams(-1, -1)
-            setPadding(0, dp(10), 0, 0)
-            addView(sheetHandle(), LinearLayout.LayoutParams(dp(36), dp(4)).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                bottomMargin = dp(18)
-            })
+        val editorContent = verticalLayout(this).apply {
+            setPadding(0, 0, 0, 0)
             addView(sheetTitle(if (initial == null) R.string.add_card else R.string.edit_card).apply {
                 setPadding(dp(20), 0, dp(20), 0)
             })
             addView(sheetDescription(R.string.card_editor_summary).apply {
+                visibility = if (advanced) View.VISIBLE else View.GONE
                 setPadding(dp(20), dp(6), dp(20), dp(8))
             })
+            addView(form)
+        }
+        val scroll = androidx.core.widget.NestedScrollView(this).apply {
+            isFillViewport = true
+            addView(editorContent)
+        }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = ViewGroup.LayoutParams(-1, -1)
+            setPadding(0, dp(12), 0, 0)
             addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
             addView(actions)
         }
-        val dialog = BottomSheetDialog(this)
+        val dialog = CardEditorDialog(this)
         dialog.setContentView(root)
-        dialog.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val systemBottom = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars()
-            ).bottom
-            val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-            view.setPadding(
-                view.paddingLeft,
-                view.paddingTop,
-                view.paddingRight,
-                maxOf(systemBottom, imeBottom)
-            )
-            insets
-        }
         cancel.setOnClickListener { dialog.dismiss() }
         save.setOnClickListener {
             val idmValid = validateHexField(idm, 16, optional = false)
@@ -1338,24 +1511,12 @@ class MainActivity : AppCompatActivity() {
                 store.put(profile)
                 if (initial == null && store.selectedProfile() == null) store.select(profile.profileId)
                 dialog.dismiss()
-                activateSelected()
+                activateConfiguredRoute()
                 showPage(TAB_CARDS, refreshPmm = false)
                 bottomNavigation.selectedItemId = TAB_CARDS
             }
         }
-        dialog.setOnShowListener {
-            dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.let { sheet ->
-                sheet.layoutParams = sheet.layoutParams.apply {
-                    height = (resources.displayMetrics.heightPixels * 0.90f).toInt()
-                }
-            }
-            dialog.behavior.apply {
-                skipCollapsed = true
-                state = BottomSheetBehavior.STATE_EXPANDED
-            }
-        }
         dialog.show()
-        ViewCompat.requestApplyInsets(root)
     }
 
     private fun editorField(
@@ -1435,7 +1596,7 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(R.string.delete) { _, _ ->
                 store.remove(profile.profileId)
-                activateSelected()
+                activateConfiguredRoute()
                 showPage(TAB_CARDS, refreshPmm = false)
             }
             .show()

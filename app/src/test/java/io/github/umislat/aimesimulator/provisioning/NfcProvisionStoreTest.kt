@@ -1,0 +1,182 @@
+package io.github.umislat.aimesimulator.provisioning
+
+import android.app.Application
+import android.os.Bundle
+import android.util.Base64
+import org.json.JSONObject
+import org.junit.Assert.*
+import org.junit.After
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import java.io.File
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [29, 36], application = Application::class, shadows = [PosixAtomicFileShadow::class])
+class NfcProvisionStoreTest {
+    @get:Rule val folder = TemporaryFolder()
+    private val uid = 10366
+
+    @Before fun before() { PosixAtomicFileShadow.reset() }
+    @After fun after() { PosixAtomicFileShadow.reset() }
+
+    @Test fun aNewStoreReconstructsTheExactPlanWithoutChangingItsFile() {
+        val data = savedPlan(uid)
+        NfcProvisionStore(folder.root).save(data, uid, 185)
+        val file = File(folder.root, "nfc-provision-plan.json")
+        val original = file.readBytes()
+        val read = checkNotNull(NfcProvisionStore(folder.root).read(uid))
+        assertEquals(data.getString("token"), read.getString("token"))
+        assertEquals(185, read.getInt("boot"))
+        for (name in listOf("original", "proposed")) assertArrayEquals(data.getByteArray(name), read.getByteArray(name))
+        assertArrayEquals(original, file.readBytes())
+        read.getByteArray("original")!![0] = 0
+        assertArrayEquals(data.getByteArray("original"), NfcProvisionStore(folder.root).read(uid)!!.getByteArray("original"))
+    }
+
+    @Test fun missingDamagedOrDifferentOwnersPlanIsUnavailableAndRetained() {
+        val store = NfcProvisionStore(folder.root)
+        assertNull(store.read(uid))
+        store.save(savedPlan(uid), uid, 185)
+        assertNull(store.read(uid + 1))
+        val file = File(folder.root, "nfc-provision-plan.json")
+        val original = file.readText()
+        for ((key, replacement) in listOf(
+            "version" to 4, "token" to "bad", "uid" to uid + 1, "domain" to "unknown",
+            "originalHash" to "0".repeat(64), "proposedHash" to "0".repeat(64),
+            "oldSystemCode" to "4001", "nfcid2" to "012E998877665544",
+            "proposed" to Base64.encodeToString("<services/>".toByteArray(), Base64.NO_WRAP)
+        )) {
+            val corrupt = JSONObject(original).put(key, replacement).toString()
+            file.writeText(corrupt)
+            assertNull("Accepted corrupt $key", store.read(uid))
+            assertEquals(corrupt, file.readText())
+        }
+        file.writeBytes(ByteArray(6 * NfcSnapshotArchive.MAX_XML + 1) { 32 })
+        assertNull(store.read(uid))
+        assertTrue(file.exists())
+    }
+
+    @Test fun invalidReplacementCannotDestroyTheSavedOriginal() {
+        val store = NfcProvisionStore(folder.root)
+        val data = savedPlan(uid)
+        store.save(data, uid, 185)
+        val before = File(folder.root, "nfc-provision-plan.json").readBytes()
+        data.putString("proposedHash", "f".repeat(64))
+        assertThrows(IllegalArgumentException::class.java) { store.save(data, uid, 186) }
+        assertArrayEquals(before, File(folder.root, "nfc-provision-plan.json").readBytes())
+    }
+
+    @Test fun resumedTokenReplacesTheEarlierRecord() {
+        val store = NfcProvisionStore(folder.root)
+        val data = savedPlan(uid)
+        store.save(data, uid, 185)
+        data.putString("token", "b".repeat(32))
+        store.save(data, uid, 186)
+        assertEquals("b".repeat(32), NfcProvisionStore(folder.root).read(uid)!!.getString("token"))
+        assertEquals(186, store.read(uid)!!.getInt("boot"))
+    }
+
+    @Test fun versionOnePlansRemainExactFilePlans() {
+        val store = NfcProvisionStore(folder.root)
+        store.save(savedPlan(uid), uid, 185)
+        val file = File(folder.root, "nfc-provision-plan.json")
+        val legacy = JSONObject(file.readText()).apply {
+            put("version", 1); remove("source"); remove("state"); remove("direction"); remove("domain")
+        }
+        file.writeText(legacy.toString())
+        val saved = checkNotNull(store.read(uid))
+        val plan = NfcProvisionStore.validate(saved, uid)
+        assertEquals(NfcProvisionPlan.BaselineSource.FILE, plan.source)
+        assertEquals(NfcStorageDomain.CE, plan.domain)
+        assertEquals(NfcProvisionWorkflow.State.PREPARED, NfcProvisionStore.checkpoint(saved, plan).state)
+        assertFalse(plan.matchesOriginal(plan.originalXml() + "\n".toByteArray()))
+    }
+
+    @Test fun invalidProvenanceOrIncompleteRollbackCheckpointIsRejected() {
+        val store = NfcProvisionStore(folder.root)
+        val data = savedPlan(uid).apply { putString("source", "RUNTIME") }
+        store.save(data, uid, 185)
+        val file = File(folder.root, "nfc-provision-plan.json")
+        val original = file.readText()
+        for ((key, value) in listOf("source" to "DUMPSYS", "state" to "READY", "direction" to "sideways")) {
+            file.writeText(JSONObject(original).put(key, value).toString())
+            assertNull(store.read(uid))
+        }
+        file.writeText(JSONObject(original).put("state", "AWAITING_RELOAD").put("direction", "ROLLBACK").toString())
+        assertNull(store.read(uid))
+    }
+
+    @Test fun currentPlansRetainTheirDomainThroughStoreAndOperationCheckpoints() {
+        val store = NfcProvisionStore(folder.root)
+        for (domain in NfcStorageDomain.entries) {
+            store.save(savedPlan(uid, domain), uid, 185)
+            store.mark("a".repeat(32), uid, 185, NfcProvisionWorkflow.State.CONFIRMING)
+            val saved = checkNotNull(store.read(uid))
+            assertEquals(domain.name, saved.getString("domain"))
+            val plan = NfcProvisionStore.validate(saved, uid)
+            assertEquals(domain, plan.domain)
+            assertEquals(domain, plan.rollbackAgainst(plan.proposedXml()).candidate!!.domain)
+        }
+    }
+
+    @Test fun versionTwoPlansReadAsHistoricalCeAndUpgradeWithoutChangingIdentityBytes() {
+        val store = NfcProvisionStore(folder.root)
+        val data = savedPlan(uid).apply { putString("source", "RUNTIME") }
+        store.save(data, uid, 185)
+        val file = File(folder.root, "nfc-provision-plan.json")
+        val legacy = JSONObject(file.readText()).apply { put("version", 2); remove("domain") }
+        file.writeText(legacy.toString())
+        val saved = checkNotNull(store.read(uid))
+        assertEquals("CE", saved.getString("domain"))
+        assertEquals("RUNTIME", saved.getString("source"))
+        assertArrayEquals(data.getByteArray("original"), saved.getByteArray("original"))
+        assertEquals(legacy.toString(), file.readText())
+        store.save(saved, uid, 185)
+        assertEquals(3, JSONObject(file.readText()).getInt("version"))
+        assertEquals("CE", JSONObject(file.readText()).getString("domain"))
+    }
+
+    @Test fun currentFormatPlansCannotLoseTheDomainAndSilentlyDefaultToCe() {
+        val store = NfcProvisionStore(folder.root)
+        store.save(savedPlan(uid, NfcStorageDomain.DE), uid, 185)
+        val file = File(folder.root, "nfc-provision-plan.json")
+        val original = JSONObject(file.readText())
+        original.remove("domain")
+        file.writeText(original.toString())
+        assertNull(store.read(uid))
+        assertEquals(original.toString(), file.readText())
+    }
+
+    @Test @Config(sdk = [36]) fun silentAtomicRenameFailureIsNotReportedAsASavedPlan() {
+        val store = NfcProvisionStore(folder.root)
+        val data = savedPlan(uid)
+        store.save(data, uid, 185)
+        data.putString("token", "b".repeat(32))
+        PosixAtomicFileShadow.failRename = true
+        assertThrows(IllegalStateException::class.java) { store.save(data, uid, 186) }
+        assertEquals("a".repeat(32), store.read(uid)!!.getString("token"))
+    }
+
+    companion object {
+        internal fun savedPlan(uid: Int, domain: NfcStorageDomain = NfcStorageDomain.CE): Bundle {
+            val original = ("<services><service component=\"${NfcProvisionPlan.Target.AIME.component}\" " +
+                "uid=\"$uid\" system-code=\"4000\" nfcid2=\"02FE010203040506\"/></services>").toByteArray()
+            val plan = NfcProvisionPlan.prepare(original, RestoreProbeArchive.sha256(original),
+                NfcProvisionPlan.Target.AIME, uid, NfcProvisionPlan.Identity("4000", "02FE010203040506"),
+                NfcProvisionPlan.Identity("88B4", "012E102030405060"), domain = domain)
+            return Bundle().apply {
+                putString("token", "a".repeat(32)); putInt("uid", uid)
+                putString("nfcid2", plan.after.nfcid2)
+                putString("domain", domain.name)
+                putString("oldSystemCode", plan.before.systemCode); putString("oldNfcid2", plan.before.nfcid2)
+                putString("originalHash", plan.originalHash); putString("proposedHash", plan.proposedHash)
+                putByteArray("original", plan.originalXml()); putByteArray("proposed", plan.proposedXml())
+            }
+        }
+    }
+}

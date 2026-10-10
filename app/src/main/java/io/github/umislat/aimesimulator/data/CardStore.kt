@@ -15,6 +15,11 @@ internal class CardStore(context: Context) {
     private var cachedProfiles = emptyList<CardProfile>()
 
     init {
+        if (!preferences.contains(KEY_PERSISTED_ROUTE_ONLY_MODE)) {
+            val newInstallation = !preferences.contains(KEY_MIGRATION_DONE) &&
+                !preferences.contains(KEY_PROFILES) && !File(appContext.filesDir, "cards.json").isFile
+            preferences.edit { putBoolean(KEY_PERSISTED_ROUTE_ONLY_MODE, newInstallation) }
+        }
         migrateExistingInstallation()
     }
 
@@ -91,10 +96,17 @@ internal class CardStore(context: Context) {
         return plan
     }
 
-    fun compatibilityMode(): Boolean = preferences.getBoolean(KEY_COMPATIBILITY, false)
+    fun persistedRouteOnlyMode(): Boolean =
+        preferences.getBoolean(KEY_PERSISTED_ROUTE_ONLY_MODE, false)
 
-    fun setCompatibilityMode(enabled: Boolean) {
-        preferences.edit { putBoolean(KEY_COMPATIBILITY, enabled) }
+    fun setPersistedRouteOnlyMode(enabled: Boolean) {
+        preferences.edit { putBoolean(KEY_PERSISTED_ROUTE_ONLY_MODE, enabled) }
+    }
+
+    fun advancedMode(): Boolean = preferences.getBoolean(KEY_ADVANCED_MODE, false)
+
+    fun setAdvancedMode(enabled: Boolean) {
+        preferences.edit { putBoolean(KEY_ADVANCED_MODE, enabled) }
     }
 
     fun showIdm(): Boolean = preferences.getBoolean(KEY_SHOW_IDM, true)
@@ -195,7 +207,8 @@ internal class CardStore(context: Context) {
         private const val PREFERENCES = "aime_simulator"
         private const val KEY_PROFILES = "profiles_v2"
         private const val KEY_SELECTED = "selected_profile"
-        private const val KEY_COMPATIBILITY = "compatibility_mode"
+        private const val KEY_PERSISTED_ROUTE_ONLY_MODE = "persisted_route_only_mode"
+        private const val KEY_ADVANCED_MODE = "advanced_mode"
         private const val KEY_SHOW_IDM = "show_idm"
         private const val KEY_SHOW_ACCESS_CODE = "show_access_code"
         private const val KEY_DEFAULT_NFC_GUIDANCE_SHOWN = "default_nfc_guidance_shown"

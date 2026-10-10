@@ -4,6 +4,11 @@
 
     <uses-permission android:name="android.permission.NFC" />
 
+    <queries>
+        <package android:name="com.android.nfc" />
+        <package android:name="io.github.umislat.restorepathlab" />
+    </queries>
+
     <uses-feature
         android:name="android.hardware.nfc"
         android:required="true" />
@@ -23,6 +28,28 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.AimeSimulator"
         tools:targetApi="s">
+
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <activity
+            android:name=".ui.DeviceCapabilitiesActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.ShizukuProvisioningActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.PersistedEmulationActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:process=":nfc_session" />
 
         <activity
             android:name=".ui.AboutActivity"

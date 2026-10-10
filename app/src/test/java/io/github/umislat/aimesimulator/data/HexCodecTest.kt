@@ -7,7 +7,7 @@ import org.junit.Test
 
 class HexCodecTest {
     @Test fun normalizesWhitespaceAndCase() {
-        assertEquals("02FE001145141919", HexCodec.normalize("02fe 0011 4514 1919", 8))
+        assertEquals("02FE112233445566", HexCodec.normalize("02fe 1122 3344 5566", 8))
     }
 
     @Test fun rejectsWrongLengthAndNonHex() {
