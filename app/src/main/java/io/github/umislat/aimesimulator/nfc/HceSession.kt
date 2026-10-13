@@ -51,6 +51,10 @@ internal class HceSession(private val context: Context) {
         return workflow.activate(nfcid2, systemCode)
     }
 
+    fun inspectPersistedRoute(activity: Activity, nfcid2: String): PersistedHceRouteWorkflow.Result =
+        PersistedHceRouteWorkflow(androidBackend(activity, component), ::persistedRouteFailure)
+            .inspect(nfcid2, SYSTEM_CODE)
+
     private fun activateProfile(
         activity: Activity,
         profileId: String,

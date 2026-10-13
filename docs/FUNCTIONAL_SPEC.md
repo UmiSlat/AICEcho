@@ -32,23 +32,46 @@ change emulation-method/patch preferences, or remove any card data.
 Version 3.0 exposes an emulation-method selector separately from advanced mode.
 Fresh installations default to saved-identity/Shizuku operation; upgrades preserve
 the existing method, card selection and raw captures. Saved-identity mode has
-explicit Start emulation and Set up card commands on Cards, not duplicated on
-Status. Status keeps method selection, device checks and wallet controls.
+one state-driven primary command on Cards, not duplicated on Status. No card offers
+Add; an observed mismatched identity offers Set up and use; a matching IDm/88B4
+offers Start; unfinished operations/checkpoints offer Continue setup first. NFC-off
+opens NFC settings and unsupported hardware opens device checks. An unavailable
+observation offers Check and use in the fresh emulation process, never an assumed
+identity rewrite. Registration is read live, not inferred from a saved success flag.
+Selection and Configured on phone are distinct indicators; selecting, adding or
+editing a profile does not write a saved-identity registration. Advanced mode retains
+the separate setup entry. Status keeps method selection, device checks and wallet controls.
 Page sections are unframed; card containers are reserved for repeated profiles.
 Its MainActivity neither
 registers NFC identities nor automatically inspects the Root PMm module. The
 module route retains its existing foreground registration behavior.
 
-The setup page shows the relevant manual provisioning steps. Technical identity
+The ordinary setup page is a four-stage Check / Apply / Load and check / Done
+wizard, with one relevant action. A homepage Set up and use request starts checks
+once the authorized connection is ready; entering setup otherwise waits for an
+explicit setup request. Initial legal registration is handled inside this requested
+setup only, while foregrounded and still matching the selected card. Restore and
+NFC reload each retain a separate explicit confirmation; neither starts from a
+connection/permission callback alone. Setup requests survive rotation without
+repeating completed checks. Technical identity
 fields, baseline source, CE/DE destination and Lab/snapshot diagnostics require
 advanced mode and appear directly in one flat diagnostics section, without a
-second disclosure control. Ordinary setup shows the current card and next manual
-step, not the whole list of inactive actions. Optional settled-plan recovery is
+second disclosure control. Manual developer controls and rollback are advanced-only.
+Optional settled-plan recovery is
 advanced-only; required unfinished-plan recovery remains visible in ordinary mode. A
 changed card or original IDm disables write/activation for an older prepared identity.
 Reopening a settled plan requires explicit confirmation and a fresh table export;
-it does not submit a restore or reload. Unresolved same-boot operations stay
+required recovery in the ordinary wizard is an explicitly requested read-only resume.
+Neither submits a restore or reload. Unresolved same-boot operations stay
 blocked, and preparing a new plan replaces the single retained plan.
+
+Setup and device checks automatically bind an already authorized, running shell
+Shizuku server on foreground/reentry. This performs connection/status reads only.
+Permission is requested only by Authorize; a missing or unsuitable server opens
+Shizuku, and connection errors expose Retry. A background page does not bind when
+the server arrives. UserService bindings are released with their ViewModel; this
+does not make Shizuku survive device reboot, nor is it needed for daily activation
+of an already loaded identity.
 
 Saved-identity emulation uses a separate same-UID foreground activity. It checks
 the expected IDm/88B4 mapping, enables the existing main-process card service,
@@ -57,6 +80,24 @@ rotation does not. A mismatch provides a return-to-setup action, never an automa
 identity write. Code 49 passed both post-reload activations and RF in the single
 Xiaomi/CE cycle; other devices and interrupted-session recovery remain unverified.
 
+While the saved-identity session is resumed, NFC adapter-state changes clear stale
+success/reader indicators. Every three seconds it checks adapter availability and
+the saved identity without disabling or enabling a healthy route. A transient
+service failure or unavailable getter result permits up to 30 one-second retries;
+pause and destruction cancel all checks and retries. Manual Reconnect releases
+and enables the existing route again. None of these operations register an IDm,
+restore system data, restart the NFC system process, or require Root/Shizuku.
+
+API activation is displayed as enabled and waiting for reader commands, not as
+proof of RF communication. The main-process card service reports parsed requests
+only in saved-identity mode, using an app-private broadcast after generating its
+response. The event contains elapsed time and whether response bytes were
+generated, never identity or block data. Ordinary mode distinguishes received
+requests from requests without a generated response; advanced mode shows request
+and response counts. Earlier-session events and events while paused are ignored.
+These observations do not prove a reader accepted the response or a game account
+was recognized, and cannot detect every HAL/routing hang.
+
 The device-check page remains available without a selected card in ordinary mode.
 It shows hardware, declared emulation support, current-card registration, Shizuku
 connection and a readiness result that does not claim RF success. API level,
@@ -64,7 +105,9 @@ backup service/agent details, runtime-field inspection and full-backup probes ar
 advanced-only. Entering or switching UI mode never runs these explicit probes.
 
 The ordinary editor shows name and Access Code. Manual creation still requires
-IDm because Access Code cannot provide it; editing an existing profile or saving
+IDm because Access Code cannot provide it. Add presents physical-card reading,
+backup import, then manual entry; the import entry uses the same bounded preview
+and merge/replace path as Settings. Editing an existing profile or saving
 an NFC-F capture hides but preserves the IDm and raw blocks. Advanced editing
 shows every field. Validation, explicit save and cancel retain their behavior.
 The reader result is scrollable, with raw NFC-F captures or MIFARE UID visible

@@ -42,6 +42,7 @@ class ShizukuProvisioningActivityTest {
         RuntimeEnvironment.getApplication().getSharedPreferences("shizuku_nfc_provision", Context.MODE_PRIVATE)
             .edit().clear().commit()
         File(RuntimeEnvironment.getApplication().noBackupFilesDir, "nfc-provision-plan.json").delete()
+        CardStore(RuntimeEnvironment.getApplication()).setAdvancedMode(true)
     }
 
     @Test fun openingAndRotatingDoNotAuthorizeOrRestore() {
@@ -55,7 +56,7 @@ class ShizukuProvisioningActivityTest {
                 assertFalse(buttons.single { it.text == activity.getString(R.string.shizuku_verify) }.isEnabled)
                 assertFalse(buttons.single { it.text == activity.getString(R.string.shizuku_snapshot_capture) }.isEnabled)
                 assertFalse(buttons.single { it.text == activity.getString(R.string.shizuku_snapshot_delete) }.isEnabled)
-                assertTrue(buttons.single { it.text == activity.getString(R.string.shizuku_connect) }.isEnabled)
+                assertTrue(buttons.single { it.text == activity.getString(R.string.shizuku_open) }.isEnabled)
                 assertTrue(views.filterIsInstance<TextView>().any { it.text == activity.getString(R.string.shizuku_idle) })
                 assertTrue(activity.getSharedPreferences("shizuku_restore_probe", Context.MODE_PRIVATE).all.isEmpty())
                 assertTrue(activity.getSharedPreferences("shizuku_nfc_snapshot", Context.MODE_PRIVATE).all.isEmpty())
@@ -212,12 +213,13 @@ class ShizukuProvisioningActivityTest {
             val launched = shadowOf(activity).nextStartedActivity
             assertEquals(PersistedEmulationActivity::class.java.name, launched.component?.className)
             assertEquals(card.idm, launched.getStringExtra(PersistedEmulationActivity.EXTRA_NFCID2))
-            assertEquals(setOf("label", "nfcid2"), launched.extras!!.keySet())
+            assertEquals(setOf("label", "nfcid2", "details"), launched.extras!!.keySet().toSet())
+            assertTrue(launched.getBooleanExtra("details", false))
             assertNull(shadowOf(activity).nextStartedActivity)
             assertTrue(cards.persistedRouteOnlyMode())
             controller.pause().stop().restart().start().resume()
             assertSame(model, ViewModelProvider(activity)[ShizukuProbeModel::class.java])
-            assertEquals(state, model.screen.value)
+            assertEquals(state.copy(connection = ShizukuProbeModel.Connection.MISSING), model.screen.value)
             assertTrue(state.canRollback)
             assertEquals(card, cards.selectedProfile())
             assertTrue(activity.getSharedPreferences("shizuku_nfc_provision", Context.MODE_PRIVATE).all.isEmpty())
@@ -271,6 +273,7 @@ class ShizukuProvisioningActivityTest {
 
     @Test fun ordinarySetupHidesLabAndIdentityButKeepsCurrentStepVisible() {
         val app = RuntimeEnvironment.getApplication()
+        CardStore(app).setAdvancedMode(false)
         val card = requireNotNull(CardProfile.create("Synthetic", "012E112233445566"))
         CardStore(app).apply { put(card); select(card.profileId) }
         val controller = Robolectric.buildActivity(ShizukuProvisioningActivity::class.java).setup()
@@ -290,12 +293,13 @@ class ShizukuProvisioningActivityTest {
             assertFalse(visible.contains(activity.getString(R.string.shizuku_card_apply)))
             assertTrue(visible.contains(activity.getString(R.string.shizuku_card_activate)))
             assertFalse(visible.contains(activity.getString(R.string.shizuku_card_reload)))
-            assertTrue(visible.contains(activity.getString(R.string.device_capabilities)))
+            assertFalse(visible.contains(activity.getString(R.string.device_capabilities)))
             assertFalse(visible.any { it.startsWith(activity.getString(R.string.shizuku_card_source_file)) })
         } finally { controller.pause().stop().destroy() }
     }
 
     @Test fun ordinarySetupCanOpenDeviceChecksAfterFailureButNotWhileBusy() {
+        CardStore(RuntimeEnvironment.getApplication()).setAdvancedMode(false)
         val controller = Robolectric.buildActivity(ShizukuProvisioningActivity::class.java).setup()
         try {
             val activity = controller.get()
@@ -341,6 +345,7 @@ class ShizukuProvisioningActivityTest {
     }
 
     @Test fun ordinarySetupShowsTheCurrentStepInsteadOfAllActions() {
+        CardStore(RuntimeEnvironment.getApplication()).setAdvancedMode(false)
         val card = requireNotNull(CardProfile.create("Synthetic", "012E112233445566"))
         CardStore(RuntimeEnvironment.getApplication()).apply { put(card); select(card.profileId) }
         val controller = Robolectric.buildActivity(ShizukuProvisioningActivity::class.java).setup()
@@ -348,14 +353,14 @@ class ShizukuProvisioningActivityTest {
             val activity = controller.get()
             val model = ViewModelProvider(activity)[ShizukuProbeModel::class.java]
             val steps = linkedMapOf(
-                NfcProvisionWorkflow.State.IDLE to R.string.shizuku_card_prepare,
-                NfcProvisionWorkflow.State.NEEDS_BASELINE to R.string.shizuku_card_initialize,
-                NfcProvisionWorkflow.State.PREPARED to R.string.shizuku_card_apply,
-                NfcProvisionWorkflow.State.AWAITING_RELOAD to R.string.shizuku_card_reload,
+                NfcProvisionWorkflow.State.IDLE to R.string.card_configure_and_use,
+                NfcProvisionWorkflow.State.NEEDS_BASELINE to R.string.card_continue_setup,
+                NfcProvisionWorkflow.State.PREPARED to R.string.setup_apply,
+                NfcProvisionWorkflow.State.AWAITING_RELOAD to R.string.setup_load,
                 NfcProvisionWorkflow.State.RELOADED to R.string.shizuku_card_activate,
                 NfcProvisionWorkflow.State.ALREADY_PRESENT to R.string.shizuku_card_activate
             )
-            val primaryLabels = (steps.values + R.string.shizuku_connect).toSet().map(activity::getString)
+            val primaryLabels = (steps.values + R.string.shizuku_open).toSet().map(activity::getString)
             for ((state, next) in steps) {
                 (model.screen as MutableLiveData).value = ShizukuProbeModel.Screen(
                     connection = ShizukuProbeModel.Connection.READY, uid = 2000, bu = true,
@@ -385,6 +390,7 @@ class ShizukuProvisioningActivityTest {
     }
 
     @Test fun ordinarySetupDoesNotHideBlockingDiagnosticOperations() {
+        CardStore(RuntimeEnvironment.getApplication()).setAdvancedMode(false)
         val controller = Robolectric.buildActivity(ShizukuProvisioningActivity::class.java).setup()
         try {
             val activity = controller.get()
@@ -394,6 +400,38 @@ class ShizukuProvisioningActivityTest {
                 assertTrue(views(activity.findViewById(android.R.id.content)).filter(::visible).filterIsInstance<TextView>()
                     .any { it.text == activity.getString(R.string.shizuku_pending) })
             }
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun ordinaryWizardStillRequiresRestoreAndReloadConfirmations() {
+        val app = RuntimeEnvironment.getApplication()
+        val card = requireNotNull(CardProfile.create("Synthetic", "012E112233445566"))
+        CardStore(app).apply { put(card); select(card.profileId); setAdvancedMode(false) }
+        val controller = Robolectric.buildActivity(ShizukuProvisioningActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val model = ViewModelProvider(activity)[ShizukuProbeModel::class.java]
+            val screen = model.screen as MutableLiveData<ShizukuProbeModel.Screen>
+            val prepared = ShizukuProbeModel.Screen(connection = ShizukuProbeModel.Connection.READY,
+                uid = 2000, bu = true, provisionCandidate = true, planSaved = true, provisionIdm = card.idm,
+                provision = NfcProvisionWorkflow.Result(NfcProvisionWorkflow.State.PREPARED))
+            screen.value = prepared
+            val buttons = views(activity.findViewById(android.R.id.content)).filter(::visible).filterIsInstance<MaterialButton>()
+            buttons.single { it.text == activity.getString(R.string.setup_apply) }.performClick()
+            var dialog = ShadowDialog.getLatestDialog() as AlertDialog
+            assertTrue(dialog.isShowing)
+            assertTrue(views(dialog.window!!.decorView).filterIsInstance<TextView>().any {
+                it.text == activity.getString(R.string.setup_apply_confirm)
+            })
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+            assertTrue(app.getSharedPreferences("shizuku_nfc_provision", Context.MODE_PRIVATE).all.isEmpty())
+            screen.value = prepared.copy(provision = NfcProvisionWorkflow.Result(NfcProvisionWorkflow.State.AWAITING_RELOAD))
+            buttons.single { it.text == activity.getString(R.string.setup_load) }.performClick()
+            dialog = ShadowDialog.getLatestDialog() as AlertDialog
+            assertTrue(dialog.isShowing)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+            assertTrue(app.getSharedPreferences("shizuku_nfc_provision", Context.MODE_PRIVATE).all.isEmpty())
+            assertEquals(NfcProvisionWorkflow.State.AWAITING_RELOAD, model.screen.value!!.provision.state)
         } finally { controller.pause().stop().destroy() }
     }
 

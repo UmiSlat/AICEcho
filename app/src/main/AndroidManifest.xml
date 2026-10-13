@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.NFC" />
 
     <queries>
+        <package android:name="moe.shizuku.privileged.api" />
         <package android:name="com.android.nfc" />
         <package android:name="io.github.umislat.restorepathlab" />
     </queries>

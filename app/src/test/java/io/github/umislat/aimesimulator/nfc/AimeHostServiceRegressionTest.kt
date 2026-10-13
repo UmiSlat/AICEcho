@@ -1,7 +1,12 @@
 package io.github.umislat.aimesimulator.nfc
 
 import android.app.Application
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Looper
+import androidx.core.content.ContextCompat
 import io.github.umislat.aimesimulator.data.CardProfile
 import io.github.umislat.aimesimulator.data.CardStore
 import io.github.umislat.aimesimulator.data.HexCodec
@@ -16,6 +21,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
 
@@ -163,6 +169,45 @@ class AimeHostServiceRegressionTest {
         request[0] = 14
         request[13] = 0
         assertNull(service.processNfcFPacket(request, null))
+    }
+
+    @Test fun savedRouteTrafficReportsOnlyCountersWithoutChangingRootResponses() {
+        val events = mutableListOf<Intent>()
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) { intent?.let(events::add) }
+        }
+        ContextCompat.registerReceiver(context, receiver, IntentFilter(NfcSessionEvent.ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED)
+        try {
+            store.setPersistedRouteOnlyMode(true)
+            val savedResponse = packet(profile.idm, 0x00)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(1, events.size)
+            assertEquals(context.packageName, events.single().`package`)
+            assertEquals(setOf(NfcSessionEvent.TIME, NfcSessionEvent.RESPONDED), events.single().extras!!.keySet())
+            assertTrue(events.single().getBooleanExtra(NfcSessionEvent.RESPONDED, false))
+            store.setPersistedRouteOnlyMode(false)
+            assertTrue(savedResponse.contentEquals(packet(profile.idm, 0x00)))
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(1, events.size)
+            assertEquals(profile, store.selectedProfile())
+        } finally { context.unregisterReceiver(receiver) }
+    }
+
+    @Test fun savedRouteRejectedCommandsStillReportThatTheApplicationWasReached() {
+        val events = mutableListOf<Intent>()
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) { intent?.let(events::add) }
+        }
+        ContextCompat.registerReceiver(context, receiver, IntentFilter(NfcSessionEvent.ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED)
+        try {
+            store.setPersistedRouteOnlyMode(true)
+            assertNull(packet("02FE112233445566", 0x00))
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(1, events.size)
+            assertFalse(events.single().getBooleanExtra(NfcSessionEvent.RESPONDED, true))
+        } finally { context.unregisterReceiver(receiver) }
     }
 
     private fun packet(idm: String, vararg blocks: Int): ByteArray? =

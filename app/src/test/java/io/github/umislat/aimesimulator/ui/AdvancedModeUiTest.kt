@@ -2,6 +2,8 @@ package io.github.umislat.aimesimulator.ui
 
 import android.app.Application
 import android.content.Context
+import android.content.pm.PackageManager
+import android.nfc.NfcAdapter
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
@@ -30,7 +32,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [29, 36], application = Application::class, qualifiers = "w360dp-h800dp")
+@Config(sdk = [29, 36], application = Application::class, qualifiers = "w360dp-h800dp",
+    shadows = [PersistedEmulationActivityTest.NfcFShadow::class])
 class AdvancedModeUiTest {
     private lateinit var controller: ActivityController<MainActivity>
     private lateinit var activity: MainActivity
@@ -45,8 +48,19 @@ class AdvancedModeUiTest {
 
     @Before fun createScreen() {
         val context = RuntimeEnvironment.getApplication()
+        org.robolectric.shadows.ShadowNfcAdapter.setNfcHardwareExists(true)
+        org.robolectric.Shadows.shadowOf(context.packageManager)
+            .setSystemFeature(PackageManager.FEATURE_NFC_HOST_CARD_EMULATION_NFCF, true)
+        org.robolectric.Shadows.shadowOf(NfcAdapter.getDefaultAdapter(context)).setEnabled(true)
+        PersistedEmulationActivityTest.NfcFShadow.idm = profile.idm
+        PersistedEmulationActivityTest.NfcFShadow.systemCode = "88B4"
+        PersistedEmulationActivityTest.NfcFShadow.failure = null
         context.getSharedPreferences("aime_simulator", Context.MODE_PRIVATE)
             .edit().clear().putBoolean("storage_migrated", true).commit()
+        for (name in listOf("shizuku_nfc_provision", "shizuku_nfc_snapshot", "shizuku_restore_probe")) {
+            context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()
+        }
+        java.io.File(context.noBackupFilesDir, "nfc-provision-plan.json").delete()
         store = CardStore(context)
         store.put(profile)
         store.select(profile.profileId)
@@ -117,6 +131,7 @@ class AdvancedModeUiTest {
     }
 
     @Test fun ordinaryEditPreservesAllHiddenCardFields() {
+        store.setPersistedRouteOnlyMode(true)
         val root = openEditor(profile)
         assertEquals(2, visibleViews(root).filterIsInstance<EditText>().count())
         views(root).filterIsInstance<EditText>().first().setText("Renamed")
@@ -135,6 +150,7 @@ class AdvancedModeUiTest {
     }
 
     @Test fun scannedCardSavesRawDataEvenWhenTechnicalFieldsAreHidden() {
+        store.setPersistedRouteOnlyMode(true)
         val root = openEditor(null, profile.idm, profile.spad0, profile.idBlock)
         assertEquals(2, visibleViews(root).filterIsInstance<EditText>().count())
         views(root).filterIsInstance<EditText>().first().setText("Scanned")
@@ -205,6 +221,7 @@ class AdvancedModeUiTest {
             assertEquals(profile.idm, org.robolectric.Shadows.shadowOf(activity).nextStartedActivity
                 .getStringExtra(PersistedEmulationActivity.EXTRA_NFCID2))
             assertEquals(profile, store.selectedProfile())
+            controller.resume().pause()
         }
     }
 
@@ -252,7 +269,7 @@ class AdvancedModeUiTest {
         MainActivity::class.java.getDeclaredMethod("refreshPmm").apply { isAccessible = true }.invoke(activity)
         assertEquals(null, MainActivity::class.java.getDeclaredField("pmmSnapshot").apply { isAccessible = true }.get(activity))
         showPage(1001)
-        assertTrue(screenText().contains(activity.getString(R.string.emulation_setup)))
+        assertFalse(screenText().contains(activity.getString(R.string.emulation_setup)))
         button(screen(), R.string.emulation_start).performClick()
         val intent = org.robolectric.Shadows.shadowOf(activity).nextStartedActivity
         assertEquals(PersistedEmulationActivity::class.java.name, intent.component!!.className)
@@ -266,6 +283,78 @@ class AdvancedModeUiTest {
             showPage(tab)
             assertEquals(0, visibleViews(screen()).filterIsInstance<MaterialCardView>().count())
         }
+    }
+
+    @Test fun configuredCardStartsWithoutConfigurationOrShizuku() {
+        store.setPersistedRouteOnlyMode(true)
+        showPage(1001)
+        assertTrue(screenText().contains(activity.getString(R.string.card_configured)))
+        assertFalse(screenText().contains(activity.getString(R.string.card_configure_and_use)))
+        assertFalse(screenText().contains(activity.getString(R.string.emulation_setup)))
+        val before = preferencesWithoutUiMode()
+        button(screen(), R.string.emulation_start).performClick()
+        button(screen(), R.string.emulation_start).performClick()
+        val launched = org.robolectric.Shadows.shadowOf(activity).nextStartedActivity
+        assertEquals(PersistedEmulationActivity::class.java.name, launched.component!!.className)
+        assertEquals(before, preferencesWithoutUiMode())
+        assertEquals(null, org.robolectric.Shadows.shadowOf(activity).nextStartedActivity)
+    }
+
+    @Test fun choosingAnotherCardDoesNotRewriteOrEmulateItsIdentity() {
+        store.setPersistedRouteOnlyMode(true)
+        val second = requireNotNull(CardProfile.create("Other card", "012E001122334455"))
+        store.put(second)
+        showPage(1001)
+        PersistedEmulationActivityTest.NfcFShadow.calls.clear()
+        visibleViews(screen()).filterIsInstance<MaterialCardView>().single {
+            text(it).contains(second.label)
+        }.performClick()
+        assertEquals(second, store.selectedProfile())
+        assertEquals(profile.idm, PersistedEmulationActivityTest.NfcFShadow.idm)
+        assertTrue(PersistedEmulationActivityTest.NfcFShadow.calls.all { it == "systemCode" || it == "nfcid2" })
+        assertTrue(screenText().contains(activity.getString(R.string.card_not_configured)))
+        button(screen(), R.string.card_configure_and_use).performClick()
+        assertEquals(ShizukuProvisioningActivity::class.java.name,
+            org.robolectric.Shadows.shadowOf(activity).nextStartedActivity.component!!.className)
+    }
+
+    @Test fun unfinishedConfigurationTakesPriorityOverMatchingRuntimeIdentity() {
+        store.setPersistedRouteOnlyMode(true)
+        activity.getSharedPreferences("shizuku_nfc_provision", Context.MODE_PRIVATE).edit()
+            .putBoolean("pending", true).putString("token", "a".repeat(32)).putInt("boot", -1).commit()
+        showPage(1001)
+        button(screen(), R.string.card_continue_setup).performClick()
+        assertEquals(ShizukuProvisioningActivity::class.java.name,
+            org.robolectric.Shadows.shadowOf(activity).nextStartedActivity.component!!.className)
+        assertTrue(activity.getSharedPreferences("shizuku_nfc_provision", Context.MODE_PRIVATE).getBoolean("pending", false))
+    }
+
+    @Test fun nfcOffOpensSettingsInsteadOfProvisioning() {
+        store.setPersistedRouteOnlyMode(true)
+        org.robolectric.Shadows.shadowOf(NfcAdapter.getDefaultAdapter(activity)).setEnabled(false)
+        showPage(1001)
+        button(screen(), R.string.card_enable_nfc).performClick()
+        assertEquals(android.provider.Settings.ACTION_NFC_SETTINGS,
+            org.robolectric.Shadows.shadowOf(activity).nextStartedActivity.action)
+    }
+
+    @Test fun emptyLibraryHasOneAddAction() {
+        store.remove(profile.profileId)
+        showPage(1001)
+        assertEquals(1, visibleViews(screen()).filterIsInstance<TextView>().count {
+            it.text == activity.getString(R.string.add_card_action)
+        })
+        button(screen(), R.string.add_card_action).performClick()
+        assertTrue(ShadowDialog.getLatestDialog().isShowing)
+        val dialog = requireNotNull(ShadowDialog.getLatestDialog().window).decorView
+        val choices = views(dialog).filterIsInstance<MaterialCardView>().toList()
+        val labels = listOf(R.string.read_physical_card, R.string.add_from_backup, R.string.add_manually).map(activity::getString)
+        assertEquals(labels, choices.map { card -> labels.single { text(card).contains(it) } })
+        val before = preferencesWithoutUiMode()
+        choices[1].performClick()
+        assertEquals(android.content.Intent.ACTION_OPEN_DOCUMENT,
+            org.robolectric.Shadows.shadowOf(activity).nextStartedActivity.action)
+        assertEquals(before, preferencesWithoutUiMode())
     }
 
     private fun preferencesWithoutUiMode(): Map<String, *> =

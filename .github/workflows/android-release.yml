@@ -73,6 +73,7 @@ jobs:
           "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --verbose --print-certs "$release_apk"
           cd dist
           sha256sum "$(basename "$release_apk")" > "$(basename "$release_apk").sha256"
+          sha256sum aimesim-pmm-ksu-v3.zip > aimesim-pmm-ksu-v3.zip.sha256
 
       - name: Upload signed APK to workflow run
         uses: actions/upload-artifact@v6
@@ -81,6 +82,8 @@ jobs:
           path: |
             dist/AimeSimulator-*-release.apk
             dist/AimeSimulator-*-release.apk.sha256
+            dist/aimesim-pmm-ksu-v3.zip
+            dist/aimesim-pmm-ksu-v3.zip.sha256
           if-no-files-found: error
           retention-days: 90
 
@@ -91,10 +94,19 @@ jobs:
           version_name=${GITHUB_REF_NAME#v}
           release_apk="dist/AimeSimulator-${version_name}-release.apk"
           checksum="${release_apk}.sha256"
+          module_zip="dist/aimesim-pmm-ksu-v3.zip"
+          module_checksum="${module_zip}.sha256"
+          notes="docs/releases/${version_name}.md"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "$release_apk" "$checksum" --clobber
+            gh release upload "$GITHUB_REF_NAME" "$release_apk" "$checksum" "$module_zip" "$module_checksum" --clobber
+          elif [ -f "$notes" ]; then
+            gh release create "$GITHUB_REF_NAME" "$release_apk" "$checksum" "$module_zip" "$module_checksum" \
+              --verify-tag \
+              --notes-file "$notes" \
+              --latest \
+              --title "AimeSimulator ${version_name}"
           else
-            gh release create "$GITHUB_REF_NAME" "$release_apk" "$checksum" \
+            gh release create "$GITHUB_REF_NAME" "$release_apk" "$checksum" "$module_zip" "$module_checksum" \
               --verify-tag \
               --generate-notes \
               --title "AimeSimulator ${version_name}"

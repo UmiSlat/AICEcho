@@ -24,8 +24,8 @@ android {
         applicationId = 'io.github.umislat.aimesimulator'
         minSdk = 29
         targetSdk = 36
-        versionCode = 50
-        versionName = '3.0.0'
+        versionCode = 51
+        versionName = '3.0.1'
         versionNameSuffix = providers.gradleProperty('ciVersionSuffix').getOrElse('')
         testInstrumentationRunner = 'androidx.test.runner.AndroidJUnitRunner'
 

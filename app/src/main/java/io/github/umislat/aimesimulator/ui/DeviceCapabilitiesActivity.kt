@@ -1,14 +1,12 @@
 package io.github.umislat.aimesimulator.ui
 
 import android.content.BroadcastReceiver
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.nfc.NfcAdapter
-import android.nfc.cardemulation.NfcFCardEmulation
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -25,7 +23,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.umislat.aimesimulator.R
 import io.github.umislat.aimesimulator.data.CardStore
-import io.github.umislat.aimesimulator.nfc.AimeHostService
+import io.github.umislat.aimesimulator.nfc.NfcCardRegistration
 import io.github.umislat.aimesimulator.provisioning.AospBackupCapabilities
 import io.github.umislat.aimesimulator.provisioning.NfcProvisionWorkflow
 import io.github.umislat.aimesimulator.provisioning.NfcRuntimeInventory
@@ -71,7 +69,7 @@ class DeviceCapabilitiesActivity : AppCompatActivity() {
         hcef = row(R.string.capability_hcef)
         registration = row(R.string.capability_registration)
         connection = row(R.string.emulation_method_shizuku)
-        connect = button(R.string.shizuku_connect, R.drawable.ic_nav_status) { model.connect() }
+        connect = button(R.string.shizuku_connect, R.drawable.ic_nav_status) { ShizukuConnectionUi.act(this, model) }
         conclusion = row(R.string.capability_conclusion)
         refresh = button(R.string.capability_refresh, android.R.drawable.ic_popup_sync) {
             renderHardware()
@@ -108,7 +106,12 @@ class DeviceCapabilitiesActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         renderHardware()
-        model.refresh()
+        model.onForeground()
+    }
+
+    override fun onPause() {
+        model.onBackground()
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -131,13 +134,14 @@ class DeviceCapabilitiesActivity : AppCompatActivity() {
             applicationInfo.uid / 100000 != 0 -> R.string.capability_user_blocked
             selected == null -> R.string.shizuku_card_missing
             !supported || adapter == null -> R.string.hce_unsupported
-            else -> runCatching {
-                val manager = NfcFCardEmulation.getInstance(adapter)
-                val component = ComponentName(this, AimeHostService::class.java)
-                if (manager.getSystemCodeForService(component).equals("88B4", true) &&
-                    manager.getNfcid2ForService(component).equals(selected.idm, true))
-                    R.string.capability_registration_match else R.string.emulation_setup_required
-            }.getOrDefault(R.string.capability_registration_unknown)
+            else -> NfcCardRegistration.read(this).let { observation ->
+                when {
+                    observation.matches(selected.idm) -> R.string.capability_registration_match
+                    observation.availability == NfcCardRegistration.Availability.AVAILABLE -> R.string.emulation_setup_required
+                    observation.availability == NfcCardRegistration.Availability.NFC_OFF -> R.string.nfc_disabled
+                    else -> R.string.capability_registration_unknown
+                }
+            }
         })
     }
 
@@ -148,6 +152,7 @@ class DeviceCapabilitiesActivity : AppCompatActivity() {
             Build.MANUFACTURER, Build.MODEL, Build.VERSION.RELEASE, Build.VERSION.SDK_INT)
             else getString(R.string.capability_device_basic, Build.MANUFACTURER, Build.MODEL, Build.VERSION.RELEASE)
         connection.setText(CapabilityText.connection(screen.connection))
+        connect.setText(ShizukuConnectionUi.label(screen.connection))
         connect.visibility = if (screen.connection == ShizukuProbeModel.Connection.READY) View.GONE else View.VISIBLE
         connect.isEnabled = applicationInfo.uid / 100000 == 0 && screen.connection !in setOf(
             ShizukuProbeModel.Connection.CONNECTING, ShizukuProbeModel.Connection.PERMISSION)

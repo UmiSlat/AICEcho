@@ -116,6 +116,47 @@ class PersistedHceRouteWorkflowTest {
         }
     }
 
+    @Test fun inspectionDoesNotInterruptOrEnableTheForegroundRoute() {
+        val backend = FakeBackend()
+        assertTrue(workflow(backend).inspect(NFCID2, SYSTEM_CODE).succeeded)
+        assertEquals(listOf("supported", "availability", "systemCode", "nfcid2"), backend.calls)
+    }
+
+    @Test fun inspectionDetectsChangedMappingsWithoutWriting() {
+        val backend = FakeBackend(currentSystemCode = "4000")
+        assertEquals(PersistedHceRouteWorkflow.Outcome.SYSTEM_CODE_MISMATCH,
+            workflow(backend).inspect(NFCID2, SYSTEM_CODE).outcome)
+        assertEquals(listOf("supported", "availability", "systemCode", "nfcid2"), backend.calls)
+    }
+
+    @Test fun unavailableFieldsAreTransientRatherThanARequestToRewriteIdentity() {
+        for (backend in listOf(FakeBackend(currentSystemCode = null), FakeBackend(currentNfcid2 = null))) {
+            assertEquals(PersistedHceRouteWorkflow.Outcome.SERVICE_RESTARTING,
+                workflow(backend).activate(NFCID2, SYSTEM_CODE).outcome)
+            assertEquals(listOf("supported", "availability", "disable", "systemCode", "nfcid2"), backend.calls)
+        }
+    }
+
+    @Test fun inspectionHandlesDisabledAndRestartingServicesWithoutForegroundChanges() {
+        for (availability in listOf(HceActivationWorkflow.Availability.NFC_DISABLED,
+            HceActivationWorkflow.Availability.SERVICE_RESTARTING)) {
+            val backend = FakeBackend(availabilityResult = availability)
+            assertEquals(availability.name, workflow(backend).inspect(NFCID2, SYSTEM_CODE).outcome.name)
+            assertEquals(listOf("supported", "availability"), backend.calls)
+        }
+    }
+
+    @Test fun inspectionFailuresUseTheReporterWithoutChangingTheRoute() {
+        for (operation in listOf(Operation.AVAILABILITY, Operation.READ_SYSTEM_CODE, Operation.READ_NFCID2)) {
+            val backend = FakeBackend(throwOn = operation)
+            val errors = mutableListOf<RuntimeException>()
+            assertEquals(PersistedHceRouteWorkflow.Outcome.ERROR,
+                workflow(backend, errors).inspect(NFCID2, SYSTEM_CODE).outcome)
+            assertSame(backend.failure, errors.single())
+            assertTrue(backend.calls.none { it == "enable" || it == "disable" })
+        }
+    }
+
     private fun workflow(
         backend: FakeBackend,
         reportedErrors: MutableList<RuntimeException> = mutableListOf()

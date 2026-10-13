@@ -158,12 +158,17 @@ The requested end state is Aime emulation without Root, or with reduced
 privileges, including reliable original-card identity and account selection.
 This integration is a prerequisite, not that end state.
 
-Version 3.0 exposes **Set up card** on the ordinary card page, without a duplicate
-on Status. It connects
-to a restricted UserService, checks shell execution and the installed owned
-marker app, submits an Android-confirmed restore entirely on the phone, and
-compares both restored marker files byte for byte. Current source also includes
-AOSP NFC snapshot export and separately confirmed current-card provisioning,
+Version 3.0 uses one state-driven primary action on the ordinary card page,
+without a duplicate on Status. Live matching registration starts daily emulation
+without Shizuku; a mismatch opens **Set up and use**, and unfinished operations
+offer **Continue setup**. Selection alone never rewrites a saved identity.
+The ordinary setup wizard shows Check / Apply / Load and check / Done. It binds
+an already authorized, running shell Shizuku server automatically on entry;
+permission, restore and reload remain explicitly requested. A user-issued setup
+request performs checks and any necessary legal initial registration, but never
+automatically applies a restore or reload. Detailed developer controls, including
+the owned-marker byte-for-byte restore probe, remain in Advanced mode.
+Current source includes AOSP NFC snapshot export, current-card provisioning,
 read-back and NFC reload. It reuses `PersistedHceRouteWorkflow` for activation and
 does not change default-wallet settings. On 2026-10-09, build 2.2.23 completed an
 original-IDm -> prefix-02FE -> original-IDm device/RF cycle, with an app-process

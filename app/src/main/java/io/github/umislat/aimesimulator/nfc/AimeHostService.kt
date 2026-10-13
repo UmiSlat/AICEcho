@@ -1,7 +1,11 @@
 package io.github.umislat.aimesimulator.nfc
 
+import android.content.Intent
 import android.nfc.cardemulation.HostNfcFService
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import io.github.umislat.aimesimulator.BuildConfig
 import io.github.umislat.aimesimulator.data.CardBackupCodec
@@ -12,11 +16,12 @@ import io.github.umislat.aimesimulator.data.HexCodec
 class AimeHostService : HostNfcFService() {
     private val store by lazy { CardStore(this) }
     private var imageCache: CachedImage? = null
+    private val trafficHandler = Handler(Looper.getMainLooper())
 
     override fun processNfcFPacket(commandPacket: ByteArray, extras: Bundle?): ByteArray? {
         val request = FelicaCodec.decodeRequest(commandPacket) ?: return null
-        val profile = store.selectedProfile() ?: return null
-        if (HexCodec.encode(request.nfcid2) != profile.idm) return null
+        val profile = store.selectedProfile() ?: return observed(null)
+        if (HexCodec.encode(request.nfcid2) != profile.idm) return observed(null)
         val image = imageFor(profile)
 
         val response = when (request.command) {
@@ -48,6 +53,22 @@ class AimeHostService : HostNfcFService() {
                     response?.size ?: 0
                 )
             )
+        }
+        return observed(response)
+    }
+
+    private fun observed(response: ByteArray?): ByteArray? {
+        if (store.persistedRouteOnlyMode()) {
+            val elapsed = SystemClock.elapsedRealtime()
+            val responded = response != null
+            // Notify after returning the response; never include identity or block data.
+            trafficHandler.post {
+                runCatching {
+                    sendBroadcast(Intent(NfcSessionEvent.ACTION).setPackage(packageName)
+                        .putExtra(NfcSessionEvent.TIME, elapsed)
+                        .putExtra(NfcSessionEvent.RESPONDED, responded))
+                }
+            }
         }
         return response
     }

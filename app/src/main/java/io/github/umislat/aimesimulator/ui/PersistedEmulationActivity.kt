@@ -1,20 +1,28 @@
 package io.github.umislat.aimesimulator.ui
 
 import android.app.Application
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.nfc.NfcAdapter
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Process
+import android.os.SystemClock
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import io.github.umislat.aimesimulator.R
 import io.github.umislat.aimesimulator.data.HexCodec
 import io.github.umislat.aimesimulator.nfc.HceSession
+import io.github.umislat.aimesimulator.nfc.NfcSessionEvent
 import io.github.umislat.aimesimulator.nfc.PersistedHceRouteWorkflow
 
 class PersistedEmulationActivity : AppCompatActivity() {
@@ -22,6 +30,45 @@ class PersistedEmulationActivity : AppCompatActivity() {
     private var nfcid2: String? = null
     private lateinit var status: TextView
     private lateinit var configure: MaterialButton
+    private lateinit var traffic: TextView
+    private val handler = Handler(Looper.getMainLooper())
+    private var resumed = false
+    private var enabled = false
+    private var enabledAt = -1L
+    private var recoveryAttempts = 0
+    private var requests = 0
+    private var responses = 0
+    private val recover = Runnable { activate() }
+    private val inspect = Runnable { checkSession() }
+    private val nfcChanged = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (!resumed || intent?.action != NfcAdapter.ACTION_ADAPTER_STATE_CHANGED) return
+            when (intent.getIntExtra(NfcAdapter.EXTRA_ADAPTER_STATE, -1)) {
+                NfcAdapter.STATE_OFF, NfcAdapter.STATE_TURNING_OFF -> {
+                    clearSession()
+                    status.setText(R.string.nfc_disabled)
+                    configure.visibility = View.GONE
+                }
+                NfcAdapter.STATE_TURNING_ON -> {
+                    clearSession()
+                    status.setText(R.string.persisted_emulation_recovering)
+                }
+                NfcAdapter.STATE_ON -> reconnect()
+            }
+        }
+    }
+    private val readerTraffic = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (!resumed || !enabled || intent?.action != NfcSessionEvent.ACTION) return
+            if (intent.getLongExtra(NfcSessionEvent.TIME, -1) < enabledAt) return
+            requests++
+            val responded = intent.getBooleanExtra(NfcSessionEvent.RESPONDED, false)
+            if (responded) responses++
+            status.setText(if (responded) R.string.persisted_emulation_reader_seen
+                else R.string.persisted_emulation_reader_unanswered)
+            renderTraffic()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +92,11 @@ class PersistedEmulationActivity : AppCompatActivity() {
         }
         status = bodyText(R.string.persisted_emulation_invalid)
         content.addView(status)
+        traffic = bodyText(R.string.persisted_emulation_traffic).apply {
+            visibility = if (intent.getBooleanExtra(EXTRA_DETAILS, false)) View.VISIBLE else View.GONE
+        }
+        content.addView(traffic)
+        renderTraffic()
         configure = MaterialButton(this).apply {
             setText(R.string.emulation_setup)
             setIconResource(R.drawable.ic_nav_status)
@@ -57,6 +109,12 @@ class PersistedEmulationActivity : AppCompatActivity() {
         }
         content.addView(configure, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
         content.addView(MaterialButton(this).apply {
+            setText(R.string.persisted_emulation_reconnect)
+            setIconResource(android.R.drawable.ic_popup_sync)
+            isEnabled = nfcid2 != null
+            setOnClickListener { reconnect() }
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+        content.addView(MaterialButton(this).apply {
             setText(R.string.persisted_emulation_stop)
             setIconResource(android.R.drawable.ic_media_pause)
             setOnClickListener { finish() }
@@ -66,14 +124,72 @@ class PersistedEmulationActivity : AppCompatActivity() {
             addView(content)
         }, LinearLayout.LayoutParams(-1, 0, 1f))
         setInsetAwareContentView(root)
+        ContextCompat.registerReceiver(this, nfcChanged, IntentFilter(NfcAdapter.ACTION_ADAPTER_STATE_CHANGED),
+            ContextCompat.RECEIVER_EXPORTED)
+        ContextCompat.registerReceiver(this, readerTraffic, IntentFilter(NfcSessionEvent.ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     override fun onResume() {
         super.onResume()
-        if (isFinishing) return
+        resumed = true
+        recoveryAttempts = 0
+        activate()
+    }
+
+    private fun reconnect() {
+        if (!resumed || isFinishing) return
+        clearSession()
+        recoveryAttempts = 0
+        session = HceSession(this)
+        activate()
+    }
+
+    private fun activate() {
+        if (!resumed || isFinishing) return
         val expected = nfcid2 ?: return
+        clearSession()
         val activeSession = session ?: HceSession(this).also { session = it }
+        val attemptStarted = SystemClock.elapsedRealtime()
         val outcome = activeSession.activatePersistedRoute(this, expected)
+        render(outcome)
+        if (outcome.succeeded) {
+            enabled = true
+            enabledAt = attemptStarted
+            handler.postDelayed(inspect, INSPECT_DELAY_MS)
+        } else if (outcome.outcome == PersistedHceRouteWorkflow.Outcome.SERVICE_RESTARTING) {
+            scheduleRecovery()
+        }
+    }
+
+    private fun checkSession() {
+        if (!resumed || !enabled || isFinishing) return
+        val expected = nfcid2 ?: return
+        val outcome = session?.inspectPersistedRoute(this, expected) ?: return
+        if (outcome.succeeded) {
+            handler.postDelayed(inspect, INSPECT_DELAY_MS)
+        } else {
+            clearSession()
+            session?.deactivate(this)
+            render(outcome)
+            if (outcome.outcome == PersistedHceRouteWorkflow.Outcome.SERVICE_RESTARTING) {
+                recoveryAttempts = 0
+                scheduleRecovery()
+            }
+        }
+    }
+
+    private fun scheduleRecovery() {
+        if (recoveryAttempts < MAX_RECOVERY_ATTEMPTS) {
+            recoveryAttempts++
+            status.setText(R.string.persisted_emulation_recovering)
+            handler.postDelayed(recover, RECOVERY_DELAY_MS)
+        } else {
+            status.setText(R.string.persisted_emulation_recovery_failed)
+        }
+    }
+
+    private fun render(outcome: PersistedHceRouteWorkflow.Result) {
         status.text = when (outcome.outcome) {
             PersistedHceRouteWorkflow.Outcome.READY -> getString(R.string.shizuku_card_enabled)
             PersistedHceRouteWorkflow.Outcome.SYSTEM_CODE_MISMATCH,
@@ -91,8 +207,25 @@ class PersistedEmulationActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        resumed = false
+        clearSession()
+        status.setText(R.string.emulation_stopped)
         session?.deactivate(this)
         super.onPause()
+    }
+
+    private fun clearSession() {
+        handler.removeCallbacks(recover)
+        handler.removeCallbacks(inspect)
+        enabled = false
+        enabledAt = -1
+        requests = 0
+        responses = 0
+        renderTraffic()
+    }
+
+    private fun renderTraffic() {
+        traffic.text = getString(R.string.persisted_emulation_traffic, requests, responses)
     }
 
     override fun onStop() {
@@ -101,6 +234,9 @@ class PersistedEmulationActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
+        unregisterReceiver(nfcChanged)
+        unregisterReceiver(readerTraffic)
         super.onDestroy()
         liveActivities--
         // Only recycle this foreground session process. The main process owns card data
@@ -113,6 +249,9 @@ class PersistedEmulationActivity : AppCompatActivity() {
     }
 
     companion object {
+        internal const val INSPECT_DELAY_MS = 3_000L
+        internal const val RECOVERY_DELAY_MS = 1_000L
+        internal const val MAX_RECOVERY_ATTEMPTS = 30
         internal const val PROCESS_SUFFIX = ":nfc_session"
         internal const val EXTRA_NFCID2 = "nfcid2"
         private const val EXTRA_LABEL = "label"

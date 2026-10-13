@@ -85,7 +85,9 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
 
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
-    private val boot = Settings.Global.getInt(application.contentResolver, Settings.Global.BOOT_COUNT, -1)
+    private val boot = runCatching {
+        Settings.Global.getInt(application.contentResolver, Settings.Global.BOOT_COUNT, -1)
+    }.getOrDefault(-1)
     private val journal = ProbeJournal(application.getSharedPreferences("shizuku_restore_probe", Context.MODE_PRIVATE),
         boot)
     private val snapshotJournal = ProbeJournal(application.getSharedPreferences("shizuku_nfc_snapshot", Context.MODE_PRIVATE), boot)
@@ -111,6 +113,8 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
     private var binding = false
     private var generation = 0
     private var wantsPermission = false
+    private var foreground = false
+    private var guidedSetup = false
     private val args = Shizuku.UserServiceArgs(ComponentName(application, HceShellService::class.java))
         .daemon(false).tag("hcef-restore-probe").processNameSuffix("hcef_restore_probe").version(9)
     private val poll = Runnable { refresh() }
@@ -134,7 +138,12 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
         override fun onServiceDisconnected(name: ComponentName) { main.post { disconnected() } }
     }
     private val received = Shizuku.OnBinderReceivedListener {
-        if (!closed && service == null && !binding) publish(current().copy(connection = availability()))
+        main.post {
+            if (!closed && service == null && !binding) {
+                if (foreground) connect(askPermission = false)
+                else publish(current().copy(connection = availability()))
+            }
+        }
     }
     private val dead = Shizuku.OnBinderDeadListener { disconnected() }
     private val permission = Shizuku.OnRequestPermissionResultListener { request, result ->
@@ -152,7 +161,16 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
         main.postDelayed(ageTick, 30_000)
     }
 
-    fun connect() {
+    fun onForeground() {
+        foreground = true
+        if (service == null) connect(askPermission = false) else refresh()
+    }
+
+    fun onBackground() { foreground = false }
+
+    fun connect() = connect(askPermission = true)
+
+    private fun connect(askPermission: Boolean) {
         if (closed || binding || wantsPermission) return
         val available = availability()
         if (available != Connection.AVAILABLE) {
@@ -161,6 +179,11 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
         }
         runCatching {
             if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                if (!askPermission) {
+                    publish(current().copy(connection = if (Shizuku.shouldShowRequestPermissionRationale())
+                        Connection.DENIED else Connection.AVAILABLE))
+                    return
+                }
                 if (Shizuku.shouldShowRequestPermissionRationale()) {
                     publish(current().copy(connection = Connection.DENIED))
                 } else {
@@ -242,11 +265,19 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
                 snapshotPending = snapshotJournal.read().pending,
                 savedSnapshot = response.saved ?: previous.savedSnapshot,
                 probe = if (relevant) value else previous.probe, pending = journal.read().pending, working = false)
+            val continueGuidedSetup = guidedSetup && !next.busy
             publish(next)
             if ((next.probe.busy && relevant) || (next.snapshot.busy && captureRelevant) || (next.provision.busy && provisionRelevant)) main.postDelayed(poll, 1000)
             if ((next.probe.busy && !relevant) || (next.snapshot.busy && !captureRelevant)) {
                 publish(next.copy(probe = if (next.probe.busy) next.probe.copy(state = RestoreProbeWorkflow.State.UNKNOWN) else next.probe,
                     snapshot = if (next.snapshot.busy) next.snapshot.copy(state = NfcSnapshotWorkflow.State.UNKNOWN) else next.snapshot))
+            }
+            if (continueGuidedSetup) {
+                guidedSetup = false
+                if (next.provision.state == NfcProvisionWorkflow.State.NEEDS_BASELINE &&
+                    foreground && next.canPrepare && CardStore(getApplication()).selectedProfile()?.idm == next.provisionIdm) {
+                    initializeBaseline()
+                }
             }
         }
     }
@@ -293,6 +324,12 @@ internal class ShizukuProbeModel(application: Application) : AndroidViewModel(ap
         val token = RestoreProbeArchive.hex(ByteArray(16).also { SecureRandom().nextBytes(it) })
         publish(current().copy(planSaved = false, canActivate = false, provisionIdm = idm))
         provisionRequest(token, NfcProvisionWorkflow.State.PREPARING) { it.prepareNfcProvision(token, idm) }
+    }
+
+    fun beginSetup() {
+        if (!current().canPrepare || CardStore(getApplication()).selectedProfile() == null) return
+        guidedSetup = true
+        prepareCurrentCard()
     }
 
     fun resumePreviousPlan() {

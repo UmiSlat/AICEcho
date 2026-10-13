@@ -9,6 +9,7 @@ import android.graphics.Typeface
 import android.nfc.NfcAdapter
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
 import android.view.Menu
@@ -52,6 +53,9 @@ import io.github.umislat.aimesimulator.nfc.DefaultNfcAppPolicy
 import io.github.umislat.aimesimulator.nfc.HceActivationRetryPolicy
 import io.github.umislat.aimesimulator.nfc.HceSession
 import io.github.umislat.aimesimulator.nfc.NfcAdapterStatePolicy
+import io.github.umislat.aimesimulator.nfc.NfcCardRegistration
+import io.github.umislat.aimesimulator.provisioning.NfcProvisionStore
+import io.github.umislat.aimesimulator.provisioning.ProbeJournal
 import io.github.umislat.aimesimulator.nfc.RootlessAssessment
 import io.github.umislat.aimesimulator.root.PmmManager
 import java.io.ByteArrayOutputStream
@@ -78,6 +82,11 @@ class MainActivity : AppCompatActivity() {
     private var statusPageStatusView: TextView? = null
     private var hceRetryAction: MaterialButton? = null
     private var lastHceReport: HceSession.Report? = null
+    private var cardRegistration = NfcCardRegistration(NfcCardRegistration.Availability.UNKNOWN)
+    private var cardUseState = CardUseState.NO_CARD
+    private var cardUseAction: MaterialButton? = null
+    private var cardReadiness: TextView? = null
+    private var launchingCardFlow = false
     private var rootlessStatusView: TextView? = null
     private var rootlessDetailView: TextView? = null
 
@@ -149,6 +158,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         foreground = true
+        launchingCardFlow = false
         registerNfcStateReceiver()
         if (hasResumed) showPage(selectedTab, refreshPmm = false)
         activateConfiguredRoute()
@@ -206,6 +216,10 @@ class MainActivity : AppCompatActivity() {
         }
         renderRootlessAssessment()
         refreshDefaultNfcAppStatus()
+        if (store.persistedRouteOnlyMode()) {
+            refreshCardUseState()
+            if (selectedTab == TAB_CARDS) showPage(TAB_CARDS, refreshPmm = false)
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -248,6 +262,8 @@ class MainActivity : AppCompatActivity() {
     private fun showPage(tab: Int, refreshPmm: Boolean) {
         selectedTab = tab
         cardPageStatusView = null
+        cardUseAction = null
+        cardReadiness = null
         statusPageStatusView = null
         hceRetryAction = null
         rootlessStatusView = null
@@ -283,6 +299,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildCardsPage(): View {
+        refreshCardUseState()
         val page = FrameLayout(this)
         val scroll = ScrollView(this).apply { isFillViewport = true }
         val content = verticalLayout(this)
@@ -324,6 +341,7 @@ class MainActivity : AppCompatActivity() {
             setText(R.string.add_card_action)
             setIconResource(android.R.drawable.ic_input_add)
             setOnClickListener { showAddOptions() }
+            visibility = if (profiles.isEmpty() || store.selectedProfile() == null) View.GONE else View.VISIBLE
         }, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply {
             marginEnd = dp(20)
             bottomMargin = dp(18)
@@ -355,6 +373,14 @@ class MainActivity : AppCompatActivity() {
                 alpha = 0.72f
                 setPadding(0, dp(8), 0, 0)
             })
+        }
+        if (store.persistedRouteOnlyMode()) {
+            cardReadiness = TextView(this@MainActivity).apply {
+                setText(cardUseState.status)
+                textSize = 14f
+                setPadding(0, dp(6), 0, 0)
+            }
+            addView(cardReadiness)
         }
     }
 
@@ -395,6 +421,13 @@ class MainActivity : AppCompatActivity() {
                         textSize = 12f
                     })
                 })
+                if (store.persistedRouteOnlyMode() && cardUseState != CardUseState.CONTINUE && cardRegistration.matches(profile.idm)) {
+                    addView(TextView(this@MainActivity).apply {
+                        setText(R.string.card_configured)
+                        textSize = 13f
+                        setPadding(0, dp(4), 0, dp(2))
+                    })
+                }
                 addView(TextView(this@MainActivity).apply {
                     visibility = if (store.advancedMode()) View.VISIBLE else View.GONE
                     text = if (store.showIdm()) getString(R.string.idm_value, profile.idm)
@@ -509,25 +542,61 @@ class MainActivity : AppCompatActivity() {
     private fun emulationActions(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(0, dp(8), 0, dp(12))
-        if (store.persistedRouteOnlyMode()) {
-            addView(MaterialButton(this@MainActivity).apply {
-                setText(R.string.emulation_start)
-                setIconResource(R.drawable.ic_read_nfc)
-                isEnabled = store.selectedProfile() != null
-                setOnClickListener {
-                    val selected = store.selectedProfile() ?: return@setOnClickListener
-                    startActivity(PersistedEmulationActivity.intent(this@MainActivity, selected.label,
-                        selected.idm, store.advancedMode()))
-                }
-            }, LinearLayout.LayoutParams(-1, -2))
+        if (store.persistedRouteOnlyMode() || store.selectedProfile() == null) {
+            cardUseAction = MaterialButton(this@MainActivity).apply {
+                setText(cardUseState.action)
+                setIconResource(cardUseIcon())
+                setOnClickListener { useCurrentCard() }
+            }
+            addView(cardUseAction, LinearLayout.LayoutParams(-1, -2))
         }
-        addView(MaterialButton(this@MainActivity, null,
+        if (store.advancedMode()) addView(MaterialButton(this@MainActivity, null,
             com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             setText(R.string.emulation_setup)
             setIconResource(R.drawable.ic_nav_status)
             isEnabled = store.selectedProfile() != null
             setOnClickListener { startActivity(Intent(this@MainActivity, ShizukuProvisioningActivity::class.java)) }
         }, LinearLayout.LayoutParams(-1, -2))
+    }
+
+    private fun refreshCardUseState() {
+        cardRegistration = if (store.persistedRouteOnlyMode()) NfcCardRegistration.read(this)
+            else NfcCardRegistration(NfcCardRegistration.Availability.UNKNOWN)
+        val boot = if (store.persistedRouteOnlyMode()) runCatching {
+            Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1)
+        }.getOrDefault(-1) else -1
+        val unfinished = store.persistedRouteOnlyMode() && (listOf("shizuku_nfc_provision", "shizuku_nfc_snapshot",
+            "shizuku_restore_probe").any { ProbeJournal(getSharedPreferences(it, Context.MODE_PRIVATE), boot).read().pending } ||
+            NfcProvisionStore.requiresResume(NfcProvisionStore(noBackupFilesDir).read(applicationInfo.uid)))
+        cardUseState = CardUseState.resolve(store.selectedProfile()?.idm, cardRegistration, unfinished)
+        cardUseAction?.setText(cardUseState.action)
+        cardUseAction?.setIconResource(cardUseIcon())
+        cardReadiness?.setText(cardUseState.status)
+    }
+
+    private fun cardUseIcon() = when (cardUseState) {
+        CardUseState.NO_CARD -> android.R.drawable.ic_input_add
+        CardUseState.NFC_OFF -> R.drawable.ic_nav_settings
+        CardUseState.UNSUPPORTED -> R.drawable.ic_nav_status
+        else -> R.drawable.ic_read_nfc
+    }
+
+    private fun useCurrentCard() {
+        if (launchingCardFlow) return
+        refreshCardUseState()
+        val destination = when (cardUseState) {
+            CardUseState.NO_CARD -> { showAddOptions(); return }
+            CardUseState.SETUP -> ShizukuProvisioningActivity.intent(this, beginSetup = true)
+            CardUseState.CONTINUE -> ShizukuProvisioningActivity.intent(this, beginSetup = false)
+            CardUseState.NFC_OFF -> Intent(Settings.ACTION_NFC_SETTINGS)
+            CardUseState.UNSUPPORTED -> Intent(this, DeviceCapabilitiesActivity::class.java)
+            CardUseState.READY, CardUseState.UNKNOWN -> {
+                val selected = store.selectedProfile() ?: return
+                PersistedEmulationActivity.intent(this, selected.label, selected.idm, store.advancedMode())
+            }
+        }
+        launchingCardFlow = true
+        startActivity(destination)
     }
 
     private fun emulationMethodSelector(): MaterialButtonToggleGroup = MaterialButtonToggleGroup(this).apply {
@@ -816,20 +885,28 @@ class MainActivity : AppCompatActivity() {
                 setPadding(0, dp(6), 0, dp(18))
             })
             addView(addMethodCard(
-                R.drawable.ic_add_manual,
-                R.string.add_manually,
-                R.string.add_manually_summary
-            ) {
-                dialog.dismiss()
-                showEditor()
-            })
-            addView(addMethodCard(
                 R.drawable.ic_read_nfc,
                 R.string.read_physical_card,
                 R.string.read_physical_card_summary
             ) {
                 dialog.dismiss()
                 reader.launch(Intent(this@MainActivity, CardReaderActivity::class.java))
+            })
+            addView(addMethodCard(
+                R.drawable.ic_import,
+                R.string.add_from_backup,
+                R.string.add_from_backup_summary
+            ) {
+                dialog.dismiss()
+                backupImporter.launch(arrayOf("application/json", "text/json"))
+            }.apply { applyMargins(vertical = 6) })
+            addView(addMethodCard(
+                R.drawable.ic_add_manual,
+                R.string.add_manually,
+                R.string.add_manually_summary
+            ) {
+                dialog.dismiss()
+                showEditor()
             }.apply { applyMargins(vertical = 6) })
         }
         dialog.setContentView(content)
@@ -1114,6 +1191,7 @@ class MainActivity : AppCompatActivity() {
             setHceStatus(getString(if (store.selectedProfile() == null)
                 R.string.select_or_add_card else R.string.emulation_stopped))
             renderRootlessAssessment()
+            refreshCardUseState()
         } else {
             activateSelected(attempt, retryKind)
         }
