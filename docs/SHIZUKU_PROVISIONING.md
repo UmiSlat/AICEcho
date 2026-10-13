@@ -179,8 +179,10 @@ remain unverified. The original
 Lab, snapshot controls, baseline source and CE/DE details require Advanced mode,
 which directly shows a flat diagnostics section rather than another disclosure.
 Ordinary device checks retain basic results; runtime and full-backup probes are
-advanced-only. This UI cleanup follows the code-49 device cycle and has not been
-packaged or installed; historical screenshots do not validate the new layout.
+advanced-only. This UI cleanup follows the code-49 device cycle and was packaged
+in the 3.0.1 release, but has not yet been installed on the test phone; historical
+screenshots do not validate the new layout. Release provenance is recorded in
+[the acceptance record](3.0_ACCEPTANCE.md#301-发行基线).
 
 ## Earlier 3.0 Acceptance Build (Before the AOSP Backend Update)
 
