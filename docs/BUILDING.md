@@ -53,9 +53,11 @@ python tools\check_artifacts.py
 
 Debug APK 与正式签名 APK 通常不能直接互相覆盖。测试更新需核对签名和版本码，保留已有卡片资料。
 
-当前源码版本为 `3.0.0` / code 50，高于此前本地测试包的 code 49。CI 会追加 `-ci.<运行编号>.<提交短哈希>` 版本后缀，方便在应用内识别构建；普通本地构建与标签发布不追加后缀。
+当前源码版本为 `3.0.1` / code 51，高于此前本地测试包的 code 49。CI 会追加 `-ci.<运行编号>.<提交短哈希>` 版本后缀，方便在应用内识别构建；普通本地构建与标签发布不追加后缀。
 
 主线 CI 使用现有正式证书签名，签名一致时可覆盖正式版。它不能直接覆盖使用另一张 debug 证书的本地测试包；版本码升高不会改变签名限制。本地测试包的版本覆盖与构建产物继续放在忽略目录。
+
+AICEcho 沿用旧版的包名、签名和备份格式；新的 APK 文件名与 CI Artifact 名使用 AICEcho。已发布的旧版本资源名称保留。
 
 正式签名配置、Secrets 和发布标签规则见 [发布维护](RELEASE.md)。密钥、密码和本地签名文件不提交仓库。
 
@@ -63,7 +65,7 @@ Debug APK 与正式签名 APK 通常不能直接互相覆盖。测试更新需�
 
 - `Android CI` 对主线推送、面向主线的 PR 和手动运行执行 Android 单元测试、Lint、诊断工具测试、Debug 构建、模块打包及产物检查。
 - 主线推送和在 `main` 上手动运行还会构建正式证书签名的 Release APK，作为 CI 测试产物上传；PR 和其他分支手动运行只上传临时 debug 签名 APK，不读取正式签名 Secrets。
-- 在运行页面的 Artifacts 下载 `AimeSimulator-release-<运行编号>-<重试编号>`。压缩包内包含 APK、`SHA256SUMS.txt`、`SIGNATURE.txt` 和 `build-info.json`；测试与 Lint 报告单独上传。CI 测试包不会创建 GitHub Release。
+- 在运行页面的 Artifacts 下载 `AICEcho-release-<运行编号>-<重试编号>`。压缩包内包含 APK、`SHA256SUMS.txt`、`SIGNATURE.txt` 和 `build-info.json`；测试与 Lint 报告单独上传。CI 测试包不会创建 GitHub Release。
 - `Android Release` 由与源码版本一致的 `v*` 标签触发，使用配置的正式证书构建并发布。
 - 存档标签 `archive/hcef-rootless-20261010` 不触发正式发布。
 

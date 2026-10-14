@@ -1,6 +1,6 @@
 #!/system/bin/sh
 
-ui_print "- Installing Aime Simulator PMm patch"
+ui_print "- Installing AICEcho PMm patch"
 
 if [ "${API:-0}" -lt 35 ]; then
   ui_print "! This module is intended for Android 15 or later"

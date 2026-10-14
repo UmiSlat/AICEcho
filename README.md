@@ -1,10 +1,14 @@
-# AimeSimulator
+# AICEcho
 
-AimeSimulator 是一款 Android Aime 卡片管理与模拟应用。读取并保存实体卡资料后，可以在支持的手机上模拟刷卡。
+AICEcho 是一款面向 Amusement IC / Aime 卡片的 Android 管理与 NFC-F 模拟应用。读取并保存实体卡资料后，可以在支持的手机上模拟刷卡。
 
 支持多张卡片管理、实体卡读取和本地备份。日常使用从选卡开始，高级参数和诊断工具可按需开启。
 
-3.0.1 是本项目首个正式版本。本页介绍它的安装与使用方式，下载入口见下文。
+名称中的 `AIC` 取自 Amusement IC，`Echo` 表示回应：保留原卡标识，卡片资料由用户本地保存和使用。
+
+本页介绍当前版本的安装与使用方式，下载入口见下文。
+
+AICEcho 原名 AimeSimulator。已发布的 3.0.1 安装包仍使用旧名称，后续构建采用 AICEcho；包名、签名和卡片备份格式沿用旧版，继续支持覆盖升级和导入旧备份。
 
 ## 我的手机能用吗？
 
@@ -28,7 +32,7 @@ AimeSimulator 是一款 Android Aime 卡片管理与模拟应用。读取并保�
 | 版本 | 下载位置 | 说明 |
 | --- | --- | --- |
 | 正式版 3.0.1 | [下载页面](https://github.com/UmiSlat/AimeSimulator/releases/tag/v3.0.1) | 在资源列表中下载 `AimeSimulator-3.0.1-release.apk`；可选兼容补丁与校验文件也在同一页面 |
-| 3.0 主线测试版 | [Android CI](https://github.com/UmiSlat/AimeSimulator/actions/workflows/android-ci.yml) | 选择成功的 `main` 构建，在 Artifacts 下载 `AimeSimulator-release-…`，解压后安装 APK；下载需登录 GitHub |
+| 3.0 主线测试版 | [Android CI](https://github.com/UmiSlat/AimeSimulator/actions/workflows/android-ci.yml) | 选择成功的 `main` 构建，在 Artifacts 下载 `AICEcho-release-…`，解压后安装 APK；下载需登录 GitHub |
 
 主线测试版使用与正式版相同的证书签名，版本名带有 `-ci` 和提交标识，可在“设置 → 关于”查看。它包含开发中的更新；日常安装优先选择正式版。`v3.0.0` 保留为此前的预发布，不覆盖旧标签或旧安装包。
 
@@ -57,7 +61,7 @@ AimeSimulator 是一款 Android Aime 卡片管理与模拟应用。读取并保�
 ### 3. 配置手机刷卡
 
 1. 从[官网下载 Shizuku](https://shizuku.rikka.app/zh-hans/download/)，按[官方启动教程](https://shizuku.rikka.app/zh-hans/guide/setup/)选择“通过无线调试启动”。这里不要选择“通过 Root 启动”；也可以按教程通过电脑调试启动。
-2. 在 AimeSimulator 的“状态 → 模拟方式”中选择“Shizuku”。
+2. 在 AICEcho 的“状态 → 模拟方式”中选择“Shizuku”。
 3. 回到“卡片”页，点“配置并使用”。首次使用时点“授权 Shizuku”；已有授权会自动连接并检查，不必每次重进应用都手动连接。
 4. 配置页会依次显示“检查设备 → 应用配置 → 加载核对 → 完成”。检查与初始登记由应用处理；出现“应用配置”时，确认后在系统恢复页点“恢复我的数据”，密码留空。
 5. 点“加载配置”，确认短暂重启 NFC，等待核对完成。这一步通常不需要重启手机，期间 NFC 和钱包会短暂不可用。

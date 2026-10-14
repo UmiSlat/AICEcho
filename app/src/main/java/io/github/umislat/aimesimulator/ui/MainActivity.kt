@@ -1010,7 +1010,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun defaultBackupFileName(): String {
         val timestamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(Date())
-        return "AimeSimulator-backup-$timestamp.json"
+        return "AICEcho-backup-$timestamp.json"
     }
 
     private fun writeBackup(uri: Uri) {

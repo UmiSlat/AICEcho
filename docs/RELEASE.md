@@ -1,4 +1,4 @@
-# AimeSimulator 发布流程
+# AICEcho 发布流程
 
 本文供仓库维护者使用，记录 GitHub Actions、APK 固定签名与版本发布步骤。普通安装和使用说明见项目根目录的 [`README.md`](../README.md)。
 
@@ -37,10 +37,16 @@ PowerShell 可使用以下命令编码签名库：
 5. 创建与 `versionName` 完全一致的新标签，例如：
 
 ```bash
-git tag -a v3.0.1 -m "AimeSimulator 3.0.1"
-git push origin v3.0.1
+git tag -a v3.0.2 -m "AICEcho 3.0.2"
+git push origin v3.0.2
 ```
 
 工作流会拒绝版本标签不匹配、签名 Secrets 缺失或 APK 签名校验失败的发布。发布完成后，应从 GitHub Release 重新下载 APK，并核对工作流生成的 SHA-256 与签名证书。
 
 3.0.1 使用版本码 51，作为首个正式版本；3.0.0 / 50 的预发布保留原状。不要移动或重新使用已推送的版本标签。
+
+## 名称与兼容性
+
+新的 APK、CI Artifact 和 Release 标题使用 AICEcho。应用包名、签名配置、备份格式与 KernelSU 模块内部 ID 沿用旧版，以保持覆盖升级、旧备份导入与模块更新兼容。
+
+已发布的 AimeSimulator 版本、资源名及其说明保留原样，不修改或复用已有版本标签。仓库地址目前仍为 `UmiSlat/AimeSimulator`。

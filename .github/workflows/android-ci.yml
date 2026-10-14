@@ -121,7 +121,7 @@ jobs:
           [element] = metadata["elements"]
           destination = Path("dist/ci")
           destination.mkdir(parents=True, exist_ok=True)
-          name = f"AimeSimulator-{element['versionName']}-{variant}.apk"
+          name = f"AICEcho-{element['versionName']}-{variant}.apk"
           apk = destination / name
           shutil.copyfile(source / element["outputFile"], apk)
           digest = hashlib.sha256(apk.read_bytes()).hexdigest()
@@ -150,7 +150,7 @@ jobs:
       - name: Upload CI APK
         uses: actions/upload-artifact@v6
         with:
-          name: AimeSimulator-${{ steps.build.outputs.variant }}-${{ github.run_number }}-${{ github.run_attempt }}
+          name: AICEcho-${{ steps.build.outputs.variant }}-${{ github.run_number }}-${{ github.run_attempt }}
           path: dist/ci/
           if-no-files-found: error
           retention-days: 30
@@ -159,7 +159,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: AimeSimulator-reports-${{ github.run_number }}-${{ github.run_attempt }}
+          name: AICEcho-reports-${{ github.run_number }}-${{ github.run_attempt }}
           path: app/build/reports/
           if-no-files-found: ignore
           retention-days: 14

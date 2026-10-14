@@ -1,0 +1,16 @@
+{
+  "brand": "AICEcho",
+  "concept": "original card and its echo",
+  "palette": {
+    "background": "#221D3A",
+    "card": "#F4F0FF",
+    "echo": "#B69AFF"
+  },
+  "foreground": "../../app/src/main/res/drawable/ic_launcher_foreground.xml",
+  "monochrome": "../../app/src/main/res/drawable/ic_launcher_monochrome.xml",
+  "vector": "aicecho-icon.svg",
+  "preview": "aicecho-preview.png",
+  "safeCircleRadius": 33,
+  "maximumPathRadiusIncludingStroke": 31.813,
+  "reference": "aicecho-echo-concept.png"
+}
