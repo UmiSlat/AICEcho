@@ -19,14 +19,14 @@ internal class PersistedHceRouteWorkflow(
         val succeeded: Boolean get() = outcome == Outcome.READY
     }
 
-    // This path must only inspect and enable an existing mapping; registration belongs to
-    // HceActivationWorkflow and must not be added to this backend.
+    // This path must not register identities. Foreground listen filtering is optional.
     interface Backend {
         fun isSupported(): Boolean
         fun availability(): HceActivationWorkflow.Availability
         fun disable()
         fun currentSystemCode(): String?
         fun currentNfcid2(): String?
+        fun prepareListening() = Unit
         fun enable(): Boolean
     }
 
@@ -35,6 +35,7 @@ internal class PersistedHceRouteWorkflow(
         return try {
             backend.disable()
             mismatch(expectedNfcid2, expectedSystemCode)?.let { return it }
+            backend.prepareListening()
             if (!backend.enable()) {
                 backend.disable()
                 return Result(Outcome.ENABLE_FAILED)

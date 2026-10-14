@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.nfc.NfcAdapter
 import android.nfc.cardemulation.NfcFCardEmulation
 import android.os.DeadObjectException
+import android.os.Build
 import android.os.Looper
 import android.os.SystemClock
 import android.view.View
@@ -18,6 +19,7 @@ import io.github.umislat.aicecho.BuildConfig
 import io.github.umislat.aicecho.R
 import io.github.umislat.aicecho.nfc.AicHostService
 import io.github.umislat.aicecho.nfc.NfcSessionEvent
+import io.github.umislat.aicecho.nfc.NfcFListenSessionTest.DiscoveryShadow
 import java.time.Duration
 import org.junit.Assert.*
 import org.junit.Before
@@ -37,12 +39,14 @@ import org.robolectric.shadows.ShadowProcess
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29, 36], application = Application::class, qualifiers = "w360dp-h640dp",
-    shadows = [PersistedEmulationActivityTest.NfcFShadow::class, PersistedEmulationActivityTest.ApplicationShadow::class])
+    shadows = [PersistedEmulationActivityTest.NfcFShadow::class, PersistedEmulationActivityTest.ApplicationShadow::class,
+        DiscoveryShadow::class])
 class PersistedEmulationActivityTest {
     private val app: Application get() = RuntimeEnvironment.getApplication()
     private val idm = "012E112233445566"
 
     @Before fun setUp() {
+        DiscoveryShadow.clear()
         NfcFShadow.calls.clear()
         NfcFShadow.idm = idm
         NfcFShadow.systemCode = "88B4"
@@ -308,6 +312,81 @@ class PersistedEmulationActivityTest {
             assertEquals(calls, NfcFShadow.calls.size)
             assertTrue(texts(controller.get()).contains(app.getString(R.string.emulation_stopped)))
         } finally { controller.stop().destroy() }
+    }
+
+    @Test fun listeningIsRestrictedBeforeEnableAndRemainsAfterSuccessfulReads() {
+        NfcFShadow.onEnable = {
+            if (Build.VERSION.SDK_INT >= 35) assertEquals(listOf("restrict"), DiscoveryShadow.calls)
+            else assertTrue(DiscoveryShadow.calls.isEmpty())
+        }
+        val controller = controller().setup()
+        try {
+            repeat(3) {
+                traffic(responded = true)
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(PersistedEmulationActivity.INSPECT_DELAY_MS))
+            }
+            assertEquals(1, NfcFShadow.calls.count { it == "enable" })
+            assertEquals(if (Build.VERSION.SDK_INT >= 35) listOf("restrict") else emptyList<String>(),
+                DiscoveryShadow.calls)
+            controller.pause()
+            assertEquals(if (Build.VERSION.SDK_INT >= 35) listOf("restrict", "reset") else emptyList<String>(),
+                DiscoveryShadow.calls)
+        } finally { controller.stop().destroy() }
+    }
+
+    @Test fun invalidOrMismatchedIdentityNeverChangesDiscoveryTechnology() {
+        NfcFShadow.systemCode = "4000"
+        val controller = controller().setup()
+        try {
+            assertTrue(DiscoveryShadow.calls.isEmpty())
+            assertFalse(NfcFShadow.calls.contains("enable"))
+        } finally { controller.pause().stop().destroy() }
+        assertTrue(DiscoveryShadow.calls.isEmpty())
+    }
+
+    @Test fun failedActivationImmediatelyRestoresDefaultListening() {
+        NfcFShadow.enableResult = false
+        val controller = controller().setup()
+        try {
+            assertEquals(if (Build.VERSION.SDK_INT >= 35) listOf("restrict", "reset") else emptyList<String>(),
+                DiscoveryShadow.calls)
+            assertFalse(texts(controller.get()).contains(app.getString(R.string.shizuku_card_enabled)))
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun manualReconnectRefreshesListeningWithoutResettingToNfcAFirst() {
+        val controller = controller().setup()
+        try {
+            button(controller.get(), R.string.persisted_emulation_reconnect).performClick()
+            assertEquals(if (Build.VERSION.SDK_INT >= 35) listOf("restrict", "restrict") else emptyList<String>(),
+                DiscoveryShadow.calls)
+            assertEquals(2, NfcFShadow.calls.count { it == "enable" })
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun powerCycleReleasesAndReappliesForegroundListening() {
+        val controller = controller().setup()
+        try {
+            val adapter = shadowOf(NfcAdapter.getDefaultAdapter(app))
+            adapter.setEnabled(false)
+            adapterState(NfcAdapter.STATE_OFF)
+            adapter.setEnabled(true)
+            adapterState(NfcAdapter.STATE_ON)
+            assertEquals(if (Build.VERSION.SDK_INT >= 35) listOf("restrict", "reset", "restrict") else emptyList<String>(),
+                DiscoveryShadow.calls)
+            assertTrue(texts(controller.get()).contains(app.getString(R.string.shizuku_card_enabled)))
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun unavailableListenApiKeepsTheExistingSavedRouteUsable() {
+        DiscoveryShadow.failure = UnsupportedOperationException("Vendor API unavailable")
+        val controller = controller().setup()
+        try {
+            assertTrue(texts(controller.get()).contains(app.getString(R.string.shizuku_card_enabled)))
+            traffic(responded = true)
+            assertTrue(texts(controller.get()).contains(app.getString(R.string.persisted_emulation_reader_seen)))
+            assertTrue(app.getSharedPreferences("aicecho", Context.MODE_PRIVATE).all.isEmpty())
+        } finally { controller.pause().stop().destroy() }
     }
 
     private fun adapterState(state: Int) {

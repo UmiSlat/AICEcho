@@ -84,6 +84,20 @@ rotation does not. A mismatch provides a return-to-setup action, never an automa
 identity write. Code 49 passed both post-reload activations and RF in the single
 Xiaomi/CE cycle; other devices and interrupted-session recovery remain unverified.
 
+3.0.3 listen isolation: on Android 15+, after validating the saved identity
+and before enabling the HCE-F service, the session requests Activity-scoped NFC-F
+listening with `setDiscoveryTechnology`. Polling uses `FLAG_READER_KEEP`; no
+persistent default-technology flag is used. The restriction remains requested
+after successful card responses and through healthy read-only checks. Explicit
+Reconnect reapplies it without first restoring default listening. Pause,
+activation/inspection failure and NFC power transitions reset the request;
+destruction provides a final cleanup attempt. Android 14 and older, missing
+flagged APIs and rejected requests retain ordinary HCE-F activation. This does
+not modify identities, wallet preferences, other apps or the Root activation
+path. On 2026-10-15 the user reported stable card reads with the local signed
+listen-isolation test APK. This is current-environment feedback, not a measured
+controller listen mask or a completed cross-device/lifecycle acceptance run.
+
 While the saved-identity session is resumed, NFC adapter-state changes clear stale
 success/reader indicators. Every three seconds it checks adapter availability and
 the saved identity without disabling or enabling a healthy route. A transient

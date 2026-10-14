@@ -23,10 +23,12 @@ import io.github.umislat.aicecho.R
 import io.github.umislat.aicecho.data.HexCodec
 import io.github.umislat.aicecho.nfc.HceSession
 import io.github.umislat.aicecho.nfc.NfcSessionEvent
+import io.github.umislat.aicecho.nfc.NfcFListenSession
 import io.github.umislat.aicecho.nfc.PersistedHceRouteWorkflow
 
 class PersistedEmulationActivity : AppCompatActivity() {
     private var session: HceSession? = null
+    private val listening by lazy(LazyThreadSafetyMode.NONE) { NfcFListenSession(this) }
     private var nfcid2: String? = null
     private lateinit var status: TextView
     private lateinit var configure: MaterialButton
@@ -46,11 +48,13 @@ class PersistedEmulationActivity : AppCompatActivity() {
             when (intent.getIntExtra(NfcAdapter.EXTRA_ADAPTER_STATE, -1)) {
                 NfcAdapter.STATE_OFF, NfcAdapter.STATE_TURNING_OFF -> {
                     clearSession()
+                    listening.release()
                     status.setText(R.string.nfc_disabled)
                     configure.visibility = View.GONE
                 }
                 NfcAdapter.STATE_TURNING_ON -> {
                     clearSession()
+                    listening.release()
                     status.setText(R.string.persisted_emulation_recovering)
                 }
                 NfcAdapter.STATE_ON -> reconnect()
@@ -142,23 +146,28 @@ class PersistedEmulationActivity : AppCompatActivity() {
         clearSession()
         recoveryAttempts = 0
         session = HceSession(this)
-        activate()
+        activate(refreshListening = true)
     }
 
-    private fun activate() {
+    private fun activate(refreshListening: Boolean = false) {
         if (!resumed || isFinishing) return
         val expected = nfcid2 ?: return
         clearSession()
+        status.setText(R.string.persisted_emulation_preparing)
         val activeSession = session ?: HceSession(this).also { session = it }
         val attemptStarted = SystemClock.elapsedRealtime()
-        val outcome = activeSession.activatePersistedRoute(this, expected)
+        val outcome = activeSession.activatePersistedRoute(this, expected,
+            prepareListening = { listening.restrict(refreshListening) })
         render(outcome)
         if (outcome.succeeded) {
             enabled = true
             enabledAt = attemptStarted
             handler.postDelayed(inspect, INSPECT_DELAY_MS)
-        } else if (outcome.outcome == PersistedHceRouteWorkflow.Outcome.SERVICE_RESTARTING) {
-            scheduleRecovery()
+        } else {
+            listening.release()
+            if (outcome.outcome == PersistedHceRouteWorkflow.Outcome.SERVICE_RESTARTING) {
+                scheduleRecovery()
+            }
         }
     }
 
@@ -171,6 +180,7 @@ class PersistedEmulationActivity : AppCompatActivity() {
         } else {
             clearSession()
             session?.deactivate(this)
+            listening.release()
             render(outcome)
             if (outcome.outcome == PersistedHceRouteWorkflow.Outcome.SERVICE_RESTARTING) {
                 recoveryAttempts = 0
@@ -211,6 +221,7 @@ class PersistedEmulationActivity : AppCompatActivity() {
         clearSession()
         status.setText(R.string.emulation_stopped)
         session?.deactivate(this)
+        listening.release()
         super.onPause()
     }
 
@@ -235,6 +246,7 @@ class PersistedEmulationActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        listening.release()
         unregisterReceiver(nfcChanged)
         unregisterReceiver(readerTraffic)
         super.onDestroy()

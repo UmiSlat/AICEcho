@@ -262,6 +262,7 @@
     <string name="persisted_emulation_reader_unanswered">已收到读卡请求，但未生成回应。</string>
     <string name="persisted_emulation_traffic">读卡请求：%1$d · 已回应：%2$d</string>
     <string name="persisted_emulation_invalid">尚无可用的卡片配置，请先配置卡片。</string>
+    <string name="persisted_emulation_preparing">正在准备模拟，请先移开读卡器。</string>
     <string name="emulation_method">模拟方式</string>
     <string name="emulation_method_shizuku">Shizuku</string>
     <string name="emulation_method_module">Root 模块</string>

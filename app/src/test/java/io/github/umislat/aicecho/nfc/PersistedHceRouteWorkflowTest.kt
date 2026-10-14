@@ -157,6 +157,30 @@ class PersistedHceRouteWorkflowTest {
         }
     }
 
+    @Test fun listeningPreparationRunsOnlyAfterIdentityValidationAndBeforeEnable() {
+        val backend = FakeBackend(prepareAction = {})
+        assertTrue(workflow(backend).activate(NFCID2, SYSTEM_CODE).succeeded)
+        assertEquals(listOf("supported", "availability", "disable", "systemCode", "nfcid2", "listen", "enable"),
+            backend.calls)
+    }
+
+    @Test fun mismatchedAndUnavailableMappingsSkipListeningPreparation() {
+        for (backend in listOf(
+            FakeBackend(currentSystemCode = "4000", prepareAction = {}),
+            FakeBackend(currentNfcid2 = null, prepareAction = {}),
+            FakeBackend(supported = false, prepareAction = {})
+        )) {
+            workflow(backend).activate(NFCID2, SYSTEM_CODE)
+            assertTrue(backend.calls.none { it == "listen" || it == "enable" })
+        }
+    }
+
+    @Test fun healthyInspectionNeverChangesListeningTechnologies() {
+        val backend = FakeBackend(prepareAction = { throw AssertionError("Inspection must be read-only") })
+        assertTrue(workflow(backend).inspect(NFCID2, SYSTEM_CODE).succeeded)
+        assertTrue(backend.calls.none { it == "listen" || it == "enable" || it == "disable" })
+    }
+
     private fun workflow(
         backend: FakeBackend,
         reportedErrors: MutableList<RuntimeException> = mutableListOf()
@@ -179,7 +203,8 @@ class PersistedHceRouteWorkflowTest {
         private val currentSystemCode: String? = SYSTEM_CODE,
         private val currentNfcid2: String? = NFCID2,
         private val enableResult: Boolean = true,
-        private val throwOn: Operation? = null
+        private val throwOn: Operation? = null,
+        private val prepareAction: (() -> Unit)? = null
     ) : PersistedHceRouteWorkflow.Backend {
         val calls = mutableListOf<String>()
         val failure = IllegalStateException("simulated NFC failure")
@@ -211,6 +236,13 @@ class PersistedHceRouteWorkflowTest {
         override fun enable(): Boolean {
             record(Operation.ENABLE, "enable")
             return enableResult
+        }
+
+        override fun prepareListening() {
+            prepareAction?.let { prepare ->
+                calls += "listen"
+                prepare()
+            }
         }
 
         private fun record(operation: Operation, value: String) {

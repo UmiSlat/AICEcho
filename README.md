@@ -19,9 +19,11 @@ AICEcho 是一款 Android 卡片管理与模拟应用，主要用于 Amusement I
 
 ## 下载与安装
 
-**[下载 AICEcho 3.0.2 正式版](https://github.com/UmiSlat/AICEcho/releases/tag/v3.0.2)**
+**[下载 AICEcho 3.0.3 正式版](https://github.com/UmiSlat/AICEcho/releases/tag/v3.0.3)**
 
-打开下载页，在 **Assets** 中下载 **`AICEcho-3.0.2-release.apk`**，传到手机安装即可，不需要下载源码或自行编译。
+打开下载页，在 **Assets** 中下载 **`AICEcho-3.0.3-release.apk`**，传到手机安装即可，不需要下载源码或自行编译。
+
+**本次更新**：改善 Shizuku 刷卡稳定性，减少刚开始模拟或持续贴着读卡器时被识别成其他卡片的情况。详细内容见 [3.0.3 更新说明](docs/releases/3.0.3.md)。
 
 同页的 `aicecho-pmm-ksu-v3.zip` 是可选的 Root 兼容补丁，不是应用安装包。使用 Shizuku 时，只需安装 APK，不需要安装这个补丁。
 
@@ -54,7 +56,7 @@ AICEcho 是一款 Android 卡片管理与模拟应用，主要用于 Amusement I
 
 ### 4. 开始刷卡
 
-选中要用的卡，点“开始模拟”，保持刷卡页打开、手机解锁，将手机 NFC 天线贴近读卡器。刷卡结束后返回上一页，模拟就会停止。
+选中要用的卡，点“开始模拟”，等页面确认模拟已启用后，再将手机 NFC 天线贴近读卡器。保持刷卡页打开、手机解锁；刷卡结束后返回上一页，模拟就会停止。准备模拟时先把手机移离读卡器，避免沿用上一轮连接。
 
 同一张卡配置好后，日常刷卡**不必保持 Shizuku 运行**。换卡或修改卡片电子标识后，按首页提示重新配置；仅选中或保存卡片不会自动完成配置。
 
@@ -98,7 +100,7 @@ AICEcho 是一款 Android 卡片管理与模拟应用，主要用于 Amusement I
 
 ## 使用范围与注意事项
 
-此前版本在 Xiaomi 15 Pro / Android 16 / HyperOS 上验证过卡片配置、切换、恢复和 HINATA 读卡。**更名后的 AICEcho 新包尚未完成实机复验**，其他机型、完全未 Root 的设备与游戏账号识别也仍待验证。已验证范围与待测项目见[验收记录](docs/3.0_ACCEPTANCE.md)。
+此前版本在 Xiaomi 15 Pro / Android 16 / HyperOS 上验证过卡片配置、切换、恢复和 HINATA 读卡。AICEcho 的本次 Shizuku 修复测试包已获得用户稳定刷卡反馈；新增监听隔离适用于 Android 15 及以上，旧系统沿用原流程。其他机型、完全未 Root 的设备与游戏账号识别仍待验证。已验证范围与待测项目见[验收记录](docs/3.0_ACCEPTANCE.md)。
 
 - 当前模拟面向 FeliCa 类型的卡片，不是通用门禁卡模拟器。老式 MIFARE Aime 仅有读取卡号的实现，未做旧卡实测；不支持模拟这种旧卡，也不提供写入实体白卡的功能。
 - 更新前先导出 AICEcho 备份。同签名且版本码不低于当前版本的安装包可覆盖更新；若提示签名不一致，先保留资料，不要直接卸载。

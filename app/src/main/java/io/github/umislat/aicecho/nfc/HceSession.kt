@@ -42,10 +42,11 @@ internal class HceSession(private val context: Context) {
     fun activatePersistedRoute(
         activity: Activity,
         nfcid2: String,
-        systemCode: String = SYSTEM_CODE
+        systemCode: String = SYSTEM_CODE,
+        prepareListening: () -> Unit = {}
     ): PersistedHceRouteWorkflow.Result {
         val workflow = PersistedHceRouteWorkflow(
-            backend = androidBackend(activity, component),
+            backend = androidBackend(activity, component, prepareListening),
             failureReporter = ::persistedRouteFailure
         )
         return workflow.activate(nfcid2, systemCode)
@@ -76,12 +77,14 @@ internal class HceSession(private val context: Context) {
 
     private fun androidBackend(
         activity: Activity,
-        serviceComponent: ComponentName
-    ): AndroidHceBackend = AndroidHceBackend(activity, serviceComponent)
+        serviceComponent: ComponentName,
+        beforeEnable: () -> Unit = {}
+    ): AndroidHceBackend = AndroidHceBackend(activity, serviceComponent, beforeEnable)
 
     private inner class AndroidHceBackend(
         private val activity: Activity,
-        private val serviceComponent: ComponentName
+        private val serviceComponent: ComponentName,
+        private val beforeEnable: () -> Unit
     ) : HceActivationWorkflow.Backend, PersistedHceRouteWorkflow.Backend {
         private var activeAdapter: NfcAdapter? = null
         private var cachedManager: NfcFCardEmulation? = null
@@ -116,6 +119,8 @@ internal class HceSession(private val context: Context) {
 
         override fun currentNfcid2(): String? =
             manager().getNfcid2ForService(serviceComponent)
+
+        override fun prepareListening() = beforeEnable()
 
         override fun enable(): Boolean = manager().enableService(activity, serviceComponent)
 
