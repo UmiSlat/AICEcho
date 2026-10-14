@@ -24,8 +24,8 @@ android {
         applicationId = 'io.github.umislat.aicecho'
         minSdk = 29
         targetSdk = 36
-        versionCode = 51
-        versionName = '3.0.1'
+        versionCode = 52
+        versionName = '3.0.2'
         versionNameSuffix = providers.gradleProperty('ciVersionSuffix').getOrElse('')
         testInstrumentationRunner = 'androidx.test.runner.AndroidJUnitRunner'
 

@@ -15,7 +15,7 @@ function Checked([scriptblock]$Command) {
 }
 $sources = @(
     Get-ChildItem -LiteralPath "$PSScriptRoot\probe","$PSScriptRoot\test" -Filter '*.java' | ForEach-Object FullName
-    Join-Path $PSScriptRoot 'src\io\github\umislat\hceflab\LabProtocol.java'
+    Join-Path $PSScriptRoot 'src\io\github\umislat\aicecho\hceflab\LabProtocol.java'
 )
 Checked { javac --release 17 -d $classes @sources }
 foreach ($test in @('LabProtocolTest', 'NciTraceTest', 'NciSessionTest', 'NciProbeLockTest', 'NciRecoveryTest')) {

@@ -31,7 +31,7 @@ LSPosed 负责让系统接受原卡身份。兼容补丁则用于修正部分手
 
 ZIP 是 KernelSU 模块，不是 APK。Android 15–16 的这份补丁只针对已测试的 ST NFC 实现，不要把它当作所有 NFC 芯片都能用的通用模块。显示模块已加载，也不等于读卡器已经识别成功。
 
-补丁可从 [Android CI](https://github.com/UmiSlat/AICEcho/actions/workflows/android-ci.yml) 主线成功构建的 `AICEcho-release-…` 产物中取得，模块 ID 为 `aicecho_pmm`。
+补丁可从 [AICEcho 3.0.2 下载页](https://github.com/UmiSlat/AICEcho/releases/tag/v3.0.2)取得。需要测试版时，也可下载 [Android CI](https://github.com/UmiSlat/AICEcho/actions/workflows/android-ci.yml) 主线成功构建的 `AICEcho-release-…` 产物；模块 ID 为 `aicecho_pmm`。
 
 ## 刷卡与排查
 

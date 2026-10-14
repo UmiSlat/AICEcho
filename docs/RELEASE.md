@@ -37,13 +37,13 @@ PowerShell 可使用以下命令编码签名库：
 5. 创建与 `versionName` 完全一致的新标签，例如：
 
 ```bash
-git tag -a v3.0.2 -m "AICEcho 3.0.2"
-git push origin v3.0.2
+git tag -a v3.0.3 -m "AICEcho 3.0.3"
+git push origin v3.0.3
 ```
 
 工作流会拒绝版本标签不匹配、签名 Secrets 缺失或 APK 签名校验失败的发布。发布完成后，应从 GitHub Release 重新下载 APK，并核对工作流生成的 SHA-256 与签名证书。
 
-当前源码版本为 3.0.1 / code 51，但既有 `v3.0.1` 标签属于历史包。发布新包时先设置尚未发布的新版本与版本码，不移动或重新使用已推送的标签。
+当前源码版本为 3.0.2 / code 52，对应 AICEcho 的首个正式发布。后续发布先设置尚未发布的新版本与版本码，不移动或重新使用已推送的标签。
 
 ## AICEcho 身份
 
