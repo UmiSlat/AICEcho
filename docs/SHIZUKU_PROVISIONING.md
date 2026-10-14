@@ -1,4 +1,5 @@
 # Shizuku NFC Experiment Integration
+> 2026-10-14：当前产品已迁移到 AICEcho 新包 `io.github.umislat.aicecho`。本文中的历史包名、文件名、哈希与实机记录按当时版本保留，不代表新包已经完成真机复验。
 
 Current source now supports original-IDm emulation only (2026-10-09). Generated
 and suffix compatibility routes and their migration UI have been removed.

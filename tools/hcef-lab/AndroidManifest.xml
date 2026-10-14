@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="io.github.umislat.hceflab" android:versionCode="2" android:versionName="0.2">
+    package="io.github.umislat.aicecho.hceflab" android:versionCode="2" android:versionName="0.2">
     <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="36" />
     <uses-permission android:name="android.permission.NFC" />
     <uses-feature android:name="android.hardware.nfc.hcef" android:required="true" />

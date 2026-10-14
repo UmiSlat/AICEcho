@@ -6,7 +6,7 @@ import java.util.List;
 
 /** Read-only shell inventory. Never registers services, callbacks, routes or NCI commands. */
 public final class NfcIdentityAudit {
-    private static final String LAB_PACKAGE = "io.github.umislat.hceflab";
+    private static final String LAB_PACKAGE = "io.github.umislat.aicecho.hceflab";
     private static final String LAB_SERVICE = LAB_PACKAGE + ".LabService";
 
     public static void main(String[] args) throws Exception {

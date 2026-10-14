@@ -21,10 +21,10 @@ import java.util.concurrent.TimeUnit;
 
 /** Supervised, shell-only export of a pinned owned fixture. Never restores data. */
 public final class MiuiOwnedBackupProbe {
-    private static final String PACKAGE = "io.github.umislat.restorepathlab";
+    private static final String PACKAGE = "io.github.umislat.aicecho.restorepathlab";
     private static final String SIGNER =
             "3bf1577c690a4a57534afe7338b9534fdba659deedce1e6f3ed408ae750545dc";
-    private static final Path OUTPUT = Path.of("/data/local/tmp/aimesim-miui-owned-backup.ab");
+    private static final Path OUTPUT = Path.of("/data/local/tmp/aicecho-miui-owned-backup.ab");
     private static final int MAX_BYTES = 1024 * 1024;
 
     public static void main(String[] args) throws Exception {

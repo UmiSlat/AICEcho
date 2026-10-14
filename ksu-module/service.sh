@@ -1,14 +1,14 @@
 #!/system/bin/sh
 
 MODDIR=${0%/*}
-STATE_DIR=/data/adb/aimesim_pmm
+STATE_DIR=/data/adb/aicecho_pmm
 STATE_FILE=$STATE_DIR/state
 DETAIL_FILE=$STATE_DIR/detail
 DISABLED_FILE=$STATE_DIR/disabled
 LOCK_DIR=$STATE_DIR/operation.lock
-INJECTOR=$MODDIR/bin/aimesim_injector
-LIBRARY=/vendor/lib64/libaimesim_pmm.so
-ENABLED_PROPERTY=vendor.aimesim.pmm.enabled
+INJECTOR=$MODDIR/bin/aicecho_injector
+LIBRARY=/vendor/lib64/libaicecho_pmm.so
+ENABLED_PROPERTY=vendor.aicecho.pmm.enabled
 
 mkdir -p "$STATE_DIR"
 chmod 0700 "$STATE_DIR"
@@ -63,7 +63,7 @@ inject_once() {
   [ -f "$LIBRARY" ] || { record_state error "Patch library is missing"; return 1; }
 
   pid=$(find_hal) || { record_state waiting "Waiting for the NFC HAL"; return 1; }
-  if grep -q 'libaimesim_pmm.so' "/proc/$pid/maps" 2>/dev/null; then
+  if grep -q 'libaicecho_pmm.so' "/proc/$pid/maps" 2>/dev/null; then
     record_state active "Active in NFC HAL process $pid"
     printf '%s\n' "$pid" > "$STATE_DIR/pid"
     return 0
@@ -77,7 +77,7 @@ inject_once() {
   record_state injecting "Injecting into NFC HAL process $pid"
   output=$($INJECTOR "$pid" "$LIBRARY" 2>&1)
   code=$?
-  if [ "$code" -eq 0 ] && grep -q 'libaimesim_pmm.so' "/proc/$pid/maps" 2>/dev/null; then
+  if [ "$code" -eq 0 ] && grep -q 'libaicecho_pmm.so' "/proc/$pid/maps" 2>/dev/null; then
     printf '%s\n' "$pid" > "$STATE_DIR/pid"
     record_state active "Active in NFC HAL process $pid"
     result=0
@@ -107,7 +107,7 @@ monitor() {
       fi
       current_pid=$(find_hal 2>/dev/null)
       if [ -n "$current_pid" ] && { [ "$current_pid" != "$last_pid" ] ||
-          ! grep -q 'libaimesim_pmm.so' "/proc/$current_pid/maps" 2>/dev/null; }; then
+          ! grep -q 'libaicecho_pmm.so' "/proc/$current_pid/maps" 2>/dev/null; }; then
         inject_once
       elif [ -z "$current_pid" ]; then
         record_state waiting "Waiting for the NFC HAL"

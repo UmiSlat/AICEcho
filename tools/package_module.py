@@ -11,7 +11,7 @@ from module_layout import REQUIRED_ARCH_FILES, validate_source, validate_staged
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "ksu-module"
 NATIVE_STAGE = ROOT / "app" / "build" / "ksu-module" / "arm64-v8a"
-OUTPUT = ROOT / "dist" / "aimesim-pmm-ksu-v3.zip"
+OUTPUT = ROOT / "dist" / "aicecho-pmm-ksu-v3.zip"
 
 
 def add_file(archive: zipfile.ZipFile, source: Path, name: str) -> None:
@@ -29,7 +29,7 @@ def main() -> None:
     if missing:
         raise SystemExit(f"module source is incomplete: {', '.join(missing)}")
 
-    with tempfile.TemporaryDirectory(prefix="aimesim-module-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="aicecho-module-") as temporary:
         stage = Path(temporary)
         for source in SOURCE.rglob("*"):
             if source.is_file():

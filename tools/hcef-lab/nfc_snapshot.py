@@ -89,7 +89,7 @@ def inspect_snapshot(raw: bytes) -> Snapshot:
     _, records = parse_xml(identity)
     users = sorted({int(record.get("uid")) // 100000 for record in records.values()})
     report = {
-        "format": "aimesim-reviewed-nfc-snapshot/v1",
+        "format": "aicecho-reviewed-nfc-snapshot/v1",
         "scope": "offline-archive-inspection",
         "archive_sha256": digest(raw),
         "archive_bytes": len(raw),

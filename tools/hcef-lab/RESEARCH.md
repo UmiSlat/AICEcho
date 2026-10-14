@@ -1,4 +1,5 @@
 # Reduced-Privilege HCE-F Research Gates
+> Historical evidence: the recorded package names and artifacts belong to the revisions tested at the time. Current tools use the AICEcho namespace; these device results have not been rerun under the new identities.
 
 The goal is usable Aime simulation without Root or with reduced privileges.
 A synthetic 02FE demonstration is not a substitute for account-correct simulation.

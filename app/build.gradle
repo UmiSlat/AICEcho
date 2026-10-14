@@ -3,10 +3,10 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
-def releaseKeystoreFile = System.getenv('AIMESIM_RELEASE_KEYSTORE')
-def releaseKeystorePassword = System.getenv('AIMESIM_RELEASE_STORE_PASSWORD')
-def releaseKeyAlias = System.getenv('AIMESIM_RELEASE_KEY_ALIAS')
-def releaseKeyPassword = System.getenv('AIMESIM_RELEASE_KEY_PASSWORD')
+def releaseKeystoreFile = System.getenv('AICECHO_RELEASE_KEYSTORE')
+def releaseKeystorePassword = System.getenv('AICECHO_RELEASE_STORE_PASSWORD')
+def releaseKeyAlias = System.getenv('AICECHO_RELEASE_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('AICECHO_RELEASE_KEY_PASSWORD')
 def hasReleaseSigning = [
     releaseKeystoreFile,
     releaseKeystorePassword,
@@ -15,13 +15,13 @@ def hasReleaseSigning = [
 ].every { value -> value != null && !value.isBlank() }
 
 android {
-    namespace = 'io.github.umislat.aimesimulator'
+    namespace = 'io.github.umislat.aicecho'
     compileSdk = 36
     buildToolsVersion = '36.1.0'
     ndkVersion = '25.1.8937393'
 
     defaultConfig {
-        applicationId = 'io.github.umislat.aimesimulator'
+        applicationId = 'io.github.umislat.aicecho'
         minSdk = 29
         targetSdk = 36
         versionCode = 51

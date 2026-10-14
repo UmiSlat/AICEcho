@@ -25,7 +25,7 @@
 PowerShell 可使用以下命令编码签名库：
 
 ```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("aimesimulator-release.p12")) | Set-Clipboard
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("aicecho-release.p12")) | Set-Clipboard
 ```
 
 ## 创建版本
@@ -43,10 +43,12 @@ git push origin v3.0.2
 
 工作流会拒绝版本标签不匹配、签名 Secrets 缺失或 APK 签名校验失败的发布。发布完成后，应从 GitHub Release 重新下载 APK，并核对工作流生成的 SHA-256 与签名证书。
 
-3.0.1 使用版本码 51，作为首个正式版本；3.0.0 / 50 的预发布保留原状。不要移动或重新使用已推送的版本标签。
+当前源码版本为 3.0.1 / code 51，但既有 `v3.0.1` 标签属于历史包。发布新包时先设置尚未发布的新版本与版本码，不移动或重新使用已推送的标签。
 
-## 名称与兼容性
+## AICEcho 身份
 
-新的 APK、CI Artifact 和 Release 标题使用 AICEcho。应用包名、签名配置、备份格式与 KernelSU 模块内部 ID 沿用旧版，以保持覆盖升级、旧备份导入与模块更新兼容。
+应用包名与 namespace 为 `io.github.umislat.aicecho`，Java/Kotlin/AIDL 与测试包使用相同根目录。卡片备份格式为 `io.github.umislat.aicecho.card-backup`，不会接受旧产品格式或读取旧应用私有数据。
 
-已发布的 AimeSimulator 版本、资源名及其说明保留原样，不修改或复用已有版本标签。仓库地址目前仍为 `UmiSlat/AimeSimulator`。
+KernelSU 模块 ID 为 `aicecho_pmm`，分发文件为 `aicecho-pmm-ksu-v3.zip`，库与注入器分别为 `libaicecho_pmm.so` 和 `aicecho_injector`。构建签名变量使用 `AICECHO_RELEASE_*`，GitHub Secrets 继续使用发布者的 `ANDROID_*` 配置。
+
+历史发布和来源记录保留其实际版本、文件名与包名，不移动既有标签。新的产品构建使用独立 AICEcho 身份，仓库地址为 `UmiSlat/AICEcho`。

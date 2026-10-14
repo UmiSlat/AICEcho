@@ -13,7 +13,7 @@ import provision_archive as p
 
 class NfcSnapshotTest(unittest.TestCase):
     identity = (b'<?xml version="1.0" encoding="utf-8"?>\n<services>'
-                b'<service component="io.github.umislat.hceflab/.LabService" uid="10394" '
+                b'<service component="io.github.umislat.aicecho.hceflab/.LabService" uid="10394" '
                 b'system-code="4000" nfcid2="02FE6C6162323031" />'
                 b'<service component="example.other/.Service" uid="10123" '
                 b'system-code="4001" nfcid2="02FE001122334455" />'
@@ -104,7 +104,7 @@ class NfcSnapshotTest(unittest.TestCase):
     def test_snapshot_feeds_existing_single_record_planner(self):
         result = n.inspect_snapshot(self.fixture())
         plan = p.make_plan(baseline=result.identity, baseline_sha256=result.report["identity_sha256"],
-                           domain="f", component="io.github.umislat.hceflab/.LabService", uid=10394,
+                           domain="f", component="io.github.umislat.aicecho.hceflab/.LabService", uid=10394,
                            expected_sc="4000", expected_idm="02FE6C6162323031",
                            target_sc="88B4", target_idm="012E6C6162323031")
         self.assertEqual(p.inspect_archive(plan.rollback), ("f", self.identity))

@@ -8,7 +8,7 @@ AICEcho 是一款面向 Amusement IC / Aime 卡片的 Android 管理与 NFC-F �
 
 本页介绍当前版本的安装与使用方式，下载入口见下文。
 
-AICEcho 原名 AimeSimulator。已发布的 3.0.1 安装包仍使用旧名称，后续构建采用 AICEcho；包名、签名和卡片备份格式沿用旧版，继续支持覆盖升级和导入旧备份。
+AICEcho 使用独立包名 `io.github.umislat.aicecho`，按全新应用安装。卡片资料由本应用读取或手动添加，备份仅使用 AICEcho 格式。
 
 ## 我的手机能用吗？
 
@@ -29,14 +29,11 @@ AICEcho 原名 AimeSimulator。已发布的 3.0.1 安装包仍使用旧名称，
 
 ## 下载与安装
 
-| 版本 | 下载位置 | 说明 |
-| --- | --- | --- |
-| 正式版 3.0.1 | [下载页面](https://github.com/UmiSlat/AimeSimulator/releases/tag/v3.0.1) | 在资源列表中下载 `AimeSimulator-3.0.1-release.apk`；可选兼容补丁与校验文件也在同一页面 |
-| 3.0 主线测试版 | [Android CI](https://github.com/UmiSlat/AimeSimulator/actions/workflows/android-ci.yml) | 选择成功的 `main` 构建，在 Artifacts 下载 `AICEcho-release-…`，解压后安装 APK；下载需登录 GitHub |
+从 [Android CI](https://github.com/UmiSlat/AICEcho/actions/workflows/android-ci.yml) 选择成功的 `main` 构建，在 Artifacts 下载 `AICEcho-release-…`，解压后安装 APK；下载需登录 GitHub。产物同时包含可选的 `aicecho-pmm-ksu-v3.zip` 和校验文件。
 
-主线测试版使用与正式版相同的证书签名，版本名带有 `-ci` 和提交标识，可在“设置 → 关于”查看。它包含开发中的更新；日常安装优先选择正式版。`v3.0.0` 保留为此前的预发布，不覆盖旧标签或旧安装包。
+主线构建使用发布证书签名，版本名带有 `-ci` 和提交标识，可在“设置 → 关于”查看。新包按独立应用安装；已有 AICEcho 安装可使用相同签名、版本码不低于当前版本的构建更新。
 
-更新前建议导出卡片备份。同签名且版本码不低于已安装版本的 APK 可覆盖更新；本地 debug 包可能使用不同签名，请保留数据，不要直接卸载重装。
+更新 AICEcho 前建议导出本应用的卡片备份。本地 debug 包可能使用不同签名，请保留数据，不要直接卸载重装。
 
 ## 第一次使用
 
@@ -117,7 +114,7 @@ AICEcho 原名 AimeSimulator。已发布的 3.0.1 安装包仍使用旧名称，
 
 ## 兼容性说明
 
-目前已在 Xiaomi 15 Pro / Android 16 / HyperOS 上验证卡片配置、切换、恢复及 HINATA 读卡，读到的卡片资料与原配置一致。该设备安装了 Root/LSPosed，尚未在完全未 Root 的手机上复验；3.0 的游戏账号识别、重启后使用、其他机型和部分系统存储方式仍需验证。
+核心功能此前在 Xiaomi 15 Pro / Android 16 / HyperOS 上完成过卡片配置、切换、恢复与 HINATA 读卡验证。AICEcho 采用新的包名、服务组件和模块标识，这些新身份尚未安装真机复验。此前测试设备安装了 Root/LSPosed，完全未 Root 的设备、游戏账号识别、重启后使用、其他机型和部分系统存储方式仍需验证。
 
 设备检查显示支持、配置成功或读卡器读到数据，分别代表不同步骤通过，并不保证所有游戏或机台都能使用。详细结果见 [3.0 验收记录](docs/3.0_ACCEPTANCE.md)。
 

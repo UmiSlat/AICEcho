@@ -32,7 +32,7 @@ public final class MiuiNfcSnapshotProbe {
     private static final String APK_SHA256 =
             "6f6e8ff4c3dbb447200b78a8cf8a1843dd6841d11e404f3eae05f22fe683a62f";
     private static final String APK = "/system/app/Nfc_st/Nfc_st.apk";
-    private static final Path OUTPUT = Path.of("/data/local/tmp/aimesim-reviewed-nfc-snapshot.ab");
+    private static final Path OUTPUT = Path.of("/data/local/tmp/aicecho-reviewed-nfc-snapshot.ab");
     private static final int MAX_BYTES = 8 * 1024 * 1024;
 
     public static void main(String[] args) throws Exception {

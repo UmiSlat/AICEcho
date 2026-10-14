@@ -1,6 +1,6 @@
 # Root 模块设置
 
-本页适合已经有 Root 和 LSPosed 的用户。旧版管理器中显示的 AimeSimulator 与更名后的 AICEcho 是同一个应用。只想管理、读取或备份卡片，不需要安装这些模块；3.0 推荐的 Shizuku 使用流程见 [README](../README.md)。
+本页适合已经有 Root 和 LSPosed 的用户。只想管理、读取或备份卡片，不需要安装这些模块；3.0 推荐的 Shizuku 使用流程见 [README](../README.md)。
 
 ## 先准备好
 
@@ -27,11 +27,11 @@ LSPosed 负责让系统接受原卡身份。兼容补丁则用于修正部分手
 | Android 版本 | 设置方式 |
 | --- | --- |
 | 10–14 | 在应用的模块方式下开启“读卡兼容修复”，按页面提示完成 NFC 重启 |
-| 15–16 | 在 KernelSU 管理器安装 `aimesim-pmm-ksu-v3.zip`，重启手机，再在应用中开启“读卡兼容修复” |
+| 15–16 | 在 KernelSU 管理器安装 `aicecho-pmm-ksu-v3.zip`，重启手机，再在应用中开启“读卡兼容修复” |
 
 ZIP 是 KernelSU 模块，不是 APK。Android 15–16 的这份补丁只针对已测试的 ST NFC 实现，不要把它当作所有 NFC 芯片都能用的通用模块。显示模块已加载，也不等于读卡器已经识别成功。
 
-补丁可从[正式版下载页面](https://github.com/UmiSlat/AimeSimulator/releases/tag/v3.0.1)的资源列表取得。
+补丁可从 [Android CI](https://github.com/UmiSlat/AICEcho/actions/workflows/android-ci.yml) 主线成功构建的 `AICEcho-release-…` 产物中取得，模块 ID 为 `aicecho_pmm`。
 
 ## 刷卡与排查
 

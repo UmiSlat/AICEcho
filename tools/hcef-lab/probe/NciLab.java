@@ -10,8 +10,8 @@ import java.util.concurrent.TimeUnit;
 
 /** Targeted shell research tool: only the independently registered synthetic lab identity. */
 public final class NciLab implements NciSession.Controller {
-    private static final Path LOCK = Path.of("/data/local/tmp/aimesim-hcef-lab.lock");
-    private static final Path RECOVERY = Path.of("/data/local/tmp/aimesim-hcef-recovery");
+    private static final Path LOCK = Path.of("/data/local/tmp/aicecho-hcef-lab.lock");
+    private static final Path RECOVERY = Path.of("/data/local/tmp/aicecho-hcef-recovery");
     private final Class<?> iface;
     private final Object service;
     private final Method send;

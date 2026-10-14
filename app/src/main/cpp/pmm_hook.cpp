@@ -18,12 +18,12 @@
 
 namespace {
 
-constexpr char kLogTag[] = "AimePmmPatch";
+constexpr char kLogTag[] = "AICEchoPmmPatch";
 constexpr std::array<std::uint8_t, 8> kPmm = {0x00, 0xF1, 0x00, 0x00, 0x00, 0x01, 0x43, 0x00};
 constexpr char kLegacySymbol[] = "_Z23nfa_dm_check_set_confighPhb";
 constexpr char kVendorSymbol[] = "_Z17HalSendDownstreamPvPKhm";
-constexpr char kModernEnabledProperty[] = "vendor.aimesim.pmm.enabled";
-constexpr char kLegacyEnabledProperty[] = "tmp.aimesim.pmm.enabled";
+constexpr char kModernEnabledProperty[] = "vendor.aicecho.pmm.enabled";
+constexpr char kLegacyEnabledProperty[] = "tmp.aicecho.pmm.enabled";
 
 using LegacyFunction = void (*)(std::uint8_t, std::uint8_t*, bool);
 using VendorFunction = int (*)(void*, const std::uint8_t*, std::size_t);
@@ -164,7 +164,7 @@ void installHooks() {
         bool installed = hookVendorSymbol();
         installed = hookSymbol(kLegacySymbol, reinterpret_cast<void*>(replacementLegacy),
                                reinterpret_cast<void**>(&originalLegacy)) || installed;
-        if (installed) __system_property_set("tmp.aimesim.pmm.active", "true");
+        if (installed) __system_property_set("tmp.aicecho.pmm.active", "true");
         else __android_log_print(ANDROID_LOG_WARN, kLogTag, "no supported NFC symbol was found");
     });
 }

@@ -33,7 +33,7 @@ component/UID, the expected old identity, the requested new identity and one
 explicitly verified storage domain (`f` OR `d_f`). It has no default identity,
 automatic two-domain write, arbitrary-file option or routing-preferences option.
 
-Only AimeSimulator's AimeHostService and Lab's LabService are allowed targets.
+Only AICEcho's AicHostService and Lab's LabService are allowed targets.
 Only a primary-user application UID and exactly one existing record can change.
 Other records and their attributes are preserved semantically. Unknown schemas,
 DTD/entity declarations, comments/PIs, duplicate component aliases, missing
@@ -144,6 +144,10 @@ No bounded Shizuku provisioning backend, safe automatic system-file merge,
 on-device restore transaction or multi-slot integration is implemented here.
 
 ## Local Candidate Verification, 2026-10-08
+
+> The following device records preserve the names and package identities used in those historical builds. The current AICEcho identities have not yet received device verification.
+
+
 
 The restricted planner passed 18 unittest methods (including malformed/oversized
 archives, owner/preimage mismatch, unrelated-record preservation, exact rollback,

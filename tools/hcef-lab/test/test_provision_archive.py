@@ -16,10 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import provision_archive as p
 
 
-LAB = "io.github.umislat.hceflab/io.github.umislat.hceflab.LabService"
+LAB = "io.github.umislat.aicecho.hceflab/io.github.umislat.aicecho.hceflab.LabService"
 ORIGINAL = b'''<?xml version="1.0" encoding="utf-8"?>
 <services>
- <service component="io.github.umislat.hceflab/.LabService" uid="10394" system-code="4000" nfcid2="02FE6C6162323031" />
+ <service component="io.github.umislat.aicecho.hceflab/.LabService" uid="10394" system-code="4000" nfcid2="02FE6C6162323031" />
  <service component="example.other/.Service" uid="10555" system-code="4ABC" nfcid2="02FE112233445566" description="keep &amp; preserve" />
  <service component="example.partial/.Service" uid="10556" nfcid2="RANDOM" />
 </services>

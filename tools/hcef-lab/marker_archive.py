@@ -11,7 +11,7 @@ import re
 import tarfile
 import zlib
 
-PACKAGE = "io.github.umislat.restorepathlab"
+PACKAGE = "io.github.umislat.aicecho.restorepathlab"
 HEADER = b"ANDROID BACKUP\n5\n1\nnone\n"
 
 

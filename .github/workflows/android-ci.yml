@@ -78,26 +78,26 @@ jobs:
         run: |
           test -n "$ANDROID_SIGNING_KEY"
           umask 077
-          printf '%s' "$ANDROID_SIGNING_KEY" | base64 --decode > "$RUNNER_TEMP/aimesimulator-ci-release.jks"
-          test -s "$RUNNER_TEMP/aimesimulator-ci-release.jks"
+          printf '%s' "$ANDROID_SIGNING_KEY" | base64 --decode > "$RUNNER_TEMP/aicecho-ci-release.jks"
+          test -s "$RUNNER_TEMP/aicecho-ci-release.jks"
 
       - name: Build signed main APK
         if: env.SIGNED_MAIN_BUILD == 'true'
         env:
-          AIMESIM_RELEASE_KEYSTORE: ${{ runner.temp }}/aimesimulator-ci-release.jks
-          AIMESIM_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
-          AIMESIM_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          AIMESIM_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          AICECHO_RELEASE_KEYSTORE: ${{ runner.temp }}/aicecho-ci-release.jks
+          AICECHO_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
+          AICECHO_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          AICECHO_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           CI_VERSION_SUFFIX: ${{ steps.build.outputs.version_suffix }}
         run: |
-          test -n "$AIMESIM_RELEASE_STORE_PASSWORD"
-          test -n "$AIMESIM_RELEASE_KEY_ALIAS"
-          test -n "$AIMESIM_RELEASE_KEY_PASSWORD"
+          test -n "$AICECHO_RELEASE_STORE_PASSWORD"
+          test -n "$AICECHO_RELEASE_KEY_ALIAS"
+          test -n "$AICECHO_RELEASE_KEY_PASSWORD"
           ./gradlew lintRelease assembleRelease "-PciVersionSuffix=$CI_VERSION_SUFFIX" --stacktrace
 
       - name: Remove temporary signing key
         if: always() && env.SIGNED_MAIN_BUILD == 'true'
-        run: rm -f "$RUNNER_TEMP/aimesimulator-ci-release.jks"
+        run: rm -f "$RUNNER_TEMP/aicecho-ci-release.jks"
 
       - name: Package and verify artifacts
         run: |
@@ -125,7 +125,11 @@ jobs:
           apk = destination / name
           shutil.copyfile(source / element["outputFile"], apk)
           digest = hashlib.sha256(apk.read_bytes()).hexdigest()
-          (destination / "SHA256SUMS.txt").write_text(f"{digest}  {name}\n")
+          module = destination / "aicecho-pmm-ksu-v3.zip"
+          shutil.copyfile(Path("dist") / module.name, module)
+          module_digest = hashlib.sha256(module.read_bytes()).hexdigest()
+          (destination / "SHA256SUMS.txt").write_text(
+              f"{digest}  {name}\n{module_digest}  {module.name}\n")
           info = {
               "versionName": element["versionName"],
               "versionCode": element["versionCode"],
@@ -137,6 +141,7 @@ jobs:
               "runUrl": f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
               "runAttempt": os.environ["GITHUB_RUN_ATTEMPT"],
               "sha256": digest,
+              "module": {"file": module.name, "id": "aicecho_pmm", "sha256": module_digest},
           }
           (destination / "build-info.json").write_text(json.dumps(info, indent=2) + "\n")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:

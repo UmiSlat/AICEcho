@@ -1,4 +1,5 @@
 # Xiaomi Snapshot Experiments
+> Historical evidence: the recorded package names and artifacts belong to the revisions tested at the time. Current tools use the AICEcho namespace; these device results have not been rerun under the new identities.
 
 The later, separately authorized system NFC export also passed on this ROM.
 See **System NFC Follow-Up** below. The owned-app result remains a separate gate,

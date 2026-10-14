@@ -7,7 +7,7 @@
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
         <package android:name="com.android.nfc" />
-        <package android:name="io.github.umislat.restorepathlab" />
+        <package android:name="io.github.umislat.aicecho.restorepathlab" />
     </queries>
 
     <uses-feature
@@ -18,7 +18,7 @@
         android:required="true" />
 
     <application
-        android:name=".AimeApplication"
+        android:name=".AICEchoApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:description="@string/xposed_description"
@@ -27,7 +27,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AimeSimulator"
+        android:theme="@style/Theme.AICEcho"
         tools:targetApi="s">
 
         <provider
@@ -68,7 +68,7 @@
         </activity>
 
         <service
-            android:name=".nfc.AimeHostService"
+            android:name=".nfc.AicHostService"
             android:exported="true"
             android:permission="android.permission.BIND_NFC_SERVICE">
             <intent-filter>

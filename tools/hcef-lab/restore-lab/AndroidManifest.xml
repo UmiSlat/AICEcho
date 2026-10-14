@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="io.github.umislat.restorepathlab" android:versionCode="1" android:versionName="0.1">
+    package="io.github.umislat.aicecho.restorepathlab" android:versionCode="1" android:versionName="0.1">
     <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="36" />
     <application android:label="Restore Path Lab" android:debuggable="true"
         android:allowBackup="true" android:restoreAnyVersion="true"
