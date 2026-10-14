@@ -1,8 +1,8 @@
 # HCE-F Lab
 
 Isolated Android 11+ research application and shell probe for the reduced-privilege
-HCE-F investigation. It has its own package (`io.github.umislat.hceflab`), no payment
-AID, no network permission, no Root calls and no access to AimeSimulator card data.
+HCE-F investigation. It has its own package (`io.github.umislat.aicecho.hceflab`), no payment
+AID, no network permission, no Root calls and no access to AICEcho card data.
 It is not an Aime replacement or a release APK.
 
 Lab 0.2 adds a fixed synthetic saved-identity mode and an offline, restricted
@@ -85,8 +85,8 @@ Example read-only invocation (select the actual device):
 ```powershell
 $adb = 'C:\Android\platform-tools\adb.exe'
 $serial = '<selected-device-serial>'
-& $adb -s $serial push build/hcef-lab/probe-dex/classes.dex /data/local/tmp/aimesim-hcef-lab.dex
-& $adb -s $serial shell 'CLASSPATH=/data/local/tmp/aimesim-hcef-lab.dex app_process /system/bin NciLab read-lab'
+& $adb -s $serial push build/hcef-lab/probe-dex/classes.dex /data/local/tmp/aicecho-hcef-lab.dex
+& $adb -s $serial shell 'CLASSPATH=/data/local/tmp/aicecho-hcef-lab.dex app_process /system/bin NciLab read-lab'
 ```
 
 **The write modes are experimental, not production activation APIs.** `temporary-sc`
@@ -126,7 +126,7 @@ native slot active until Lab was reopened and normally paused.
 
 The protected `LabControl` receiver can change only the synthetic Block 85 image,
 without changing controller routing or restarting the activity. Its explicit
-`io.github.umislat.hceflab.IMAGE_SC` action accepts integer `sc` 16384 or 34996,
+`io.github.umislat.aicecho.hceflab.IMAGE_SC` action accepts integer `sc` 16384 or 34996,
 and requires the sender's Android DUMP permission. Matching the image to 88B4 is
 a separate operation, not proof that the RF System Code changed.
 
@@ -147,7 +147,7 @@ with a lost response still triggers guarded readback/recovery, but a session
 that never attempted a write does not adopt another actor's temporary value.
 
 Controller-access modes, including `read-lab` and explicit restore, hold an OS file lock at
-`/data/local/tmp/aimesim-hcef-lab.lock` for their entire lifetime. The empty file
+`/data/local/tmp/aicecho-hcef-lab.lock` for their entire lifetime. The empty file
 is intentionally retained; never delete it to bypass contention, since unlinking
 allows simultaneous locks on different inodes. It is mode 0600 on the tested
 phone. Process death releases the lock, **not the controller configuration**.
@@ -219,7 +219,7 @@ Pending records must not be deleted to bypass recovery. After independently
 restoring Lab and confirming the guardian is terminal, use the baseline-only
 acknowledgement if needed. An acknowledgement is not an RF verification.
 
-Records/signals/logs are private under `/data/local/tmp/aimesim-hcef-recovery`
+Records/signals/logs are private under `/data/local/tmp/aicecho-hcef-recovery`
 (0700 directory, 0600 files on POSIX). The fixed-schema record includes a random
 session UUID, boot UUID, elapsed creation time, phase and checksum. Its payload
 contains no real card data or arbitrary commands. Updates fsync a temporary file
@@ -245,6 +245,10 @@ No Shizuku/app IPC, original-IDm support, Block 85 synchronization, production
 integration or account correctness is added by this candidate.
 
 ## Evidence Boundaries
+
+> The following device records preserve the names and package identities used in those historical builds. The current AICEcho identities have not yet received device verification.
+
+
 
 ### Read-Only Identity Audit
 

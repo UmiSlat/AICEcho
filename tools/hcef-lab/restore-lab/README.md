@@ -1,7 +1,7 @@
 # Restore Path Lab
 
 An isolated owned application to test inherited full-file restore with a
-key/value-only `BackupAgentHelper`. Package: `io.github.umislat.restorepathlab`.
+key/value-only `BackupAgentHelper`. Package: `io.github.umislat.aicecho.restorepathlab`.
 It has no NFC, network, shell or Root permission, and no exported restore receiver.
 It never reads/writes system NFC, wallet data or another application's files.
 

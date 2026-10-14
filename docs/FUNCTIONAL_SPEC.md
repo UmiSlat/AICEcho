@@ -3,6 +3,10 @@
 This document describes observable behavior. It intentionally avoids prescribing
 the structure of any earlier implementation.
 
+The current application identity is `io.github.umislat.aicecho`. Its backup format,
+private stores, NFC service components, Shizuku helpers and PMm module identities
+are independent of the earlier product; no old-package alias or import fallback is provided.
+
 ## Card profiles
 
 A profile contains a stable identifier, a user-visible label, a 16-hex-digit IDm,
@@ -229,7 +233,7 @@ for a bounded interval instead of crashing or reporting an immediate permanent f
 The LSPosed entry point uses libxposed API 101 and is scoped only to
 `com.android.nfc`. It accepts hexadecimal NFCID2 and system-code strings of the
 expected lengths while rejecting reserved system codes. On Android 14 and older,
-the NFC application loads `libpmm.so` only when the legacy PMm property is enabled.
+the NFC application loads `libaicecho_pmm.so` only when the legacy PMm property is enabled.
 
 The native hook replaces PMm with `00 F1 00 00 00 01 43 00`. Legacy systems hook
 `nfa_dm_check_set_config`. The ST HAL path modifies only CORE_SET_CONFIG parameters

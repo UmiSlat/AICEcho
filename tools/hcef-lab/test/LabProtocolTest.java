@@ -1,4 +1,4 @@
-import io.github.umislat.hceflab.LabProtocol;
+import io.github.umislat.aicecho.hceflab.LabProtocol;
 import java.util.Arrays;
 
 public final class LabProtocolTest {

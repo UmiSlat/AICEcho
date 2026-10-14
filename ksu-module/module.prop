@@ -1,6 +1,6 @@
-id=aimesim_pmm
-name=Aime Simulator PMm Patch
+id=aicecho_pmm
+name=AICEcho PMm Patch
 version=3.1.0
 versionCode=310
 author=UmiSlat
-description=Injects the Aime Simulator PMm compatibility patch into the Android 15+ NFC HAL.
+description=Injects the AICEcho PMm compatibility patch into the Android 15+ NFC HAL.

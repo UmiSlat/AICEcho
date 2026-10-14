@@ -5,27 +5,27 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
+    <!-- One original card and two echoes, kept inside the adaptive safe circle. -->
     <group
         android:pivotX="54"
         android:pivotY="54"
-        android:scaleX="0.78"
-        android:scaleY="0.78">
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M69,31 C81,36 89,47 91,59 C94,75 83,89 68,93 C56,96 43,92 35,84 C45,88 57,87 66,82 C79,75 84,61 80,49 C78,41 74,35 69,31 Z" />
-
-    <group
-        android:pivotX="50"
-        android:pivotY="56"
-        android:rotation="-14">
+        android:rotation="18"
+        android:scaleX="0.82"
+        android:scaleY="0.82">
+        <path
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2.6"
+            android:strokeLineCap="round"
+            android:pathData="M48.5,29 C48.5,26 51,23.5 54,23.5 H74 C77,23.5 79.5,26 79.5,29 V59 C79.5,62 77,64.5 74,64.5" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2.6"
+            android:strokeLineCap="round"
+            android:pathData="M38.5,39 C38.5,36 41,33.5 44,33.5 H64 C67,33.5 69.5,36 69.5,39 V69 C69.5,72 67,74.5 64,74.5" />
         <path
             android:fillColor="#FFFFFFFF"
-            android:fillType="evenOdd"
-            android:pathData="M31,39 L72,39 C77,39 80,42 80,47 L80,65 C80,70 77,73 72,73 L31,73 C26,73 23,70 23,65 L23,47 C23,42 26,39 31,39 Z M49.5,56 A7.5,7.5 0,1 1,34.5 56 A7.5,7.5 0,1 1,49.5 56 Z" />
-    </group>
-
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M72,20 C73,28 76,31 84,32 C76,33 73,36 72,44 C71,36 68,33 60,32 C68,31 71,28 72,20 Z" />
+            android:pathData="M34,43.5 H54 C57,43.5 59.5,46 59.5,49 V79 C59.5,82 57,84.5 54,84.5 H34 C31,84.5 28.5,82 28.5,79 V49 C28.5,46 31,43.5 34,43.5 Z" />
     </group>
 </vector>

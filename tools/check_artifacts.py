@@ -8,7 +8,7 @@ from module_layout import REQUIRED_ARCH_FILES, REQUIRED_SOURCE_FILES
 
 ROOT = Path(__file__).resolve().parents[1]
 APK = ROOT / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
-MODULE = ROOT / "dist" / "aimesim-pmm-ksu-v3.zip"
+MODULE = ROOT / "dist" / "aicecho-pmm-ksu-v3.zip"
 HCEF_SERVICE = ROOT / "app" / "src" / "main" / "res" / "xml" / "host_nfcf_service.xml"
 ANDROID_NAMESPACE = "{http://schemas.android.com/apk/res/android}"
 
@@ -43,7 +43,7 @@ def main() -> None:
         "META-INF/xposed/java_init.list",
         "META-INF/xposed/module.prop",
         "META-INF/xposed/scope.list",
-        "lib/arm64-v8a/libpmm.so",
+        "lib/arm64-v8a/libaicecho_pmm.so",
     })
     with zipfile.ZipFile(APK) as archive:
         if "assets/xposed_init" in archive.namelist():

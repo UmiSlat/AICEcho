@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import tarfile
 
-PACKAGE = "io.github.umislat.restorepathlab"
+PACKAGE = "io.github.umislat.aicecho.restorepathlab"
 PREFIX = f"apps/{PACKAGE}/"
 SIGNER = "3bf1577c690a4a57534afe7338b9534fdba659deedce1e6f3ed408ae750545dc"
 HEADER = (f"MIUI BACKUP\n2\n{PACKAGE} Restore Path Lab\n0\n0\n"

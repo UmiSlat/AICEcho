@@ -13,9 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      AIMESIM_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
-      AIMESIM_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      AIMESIM_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      AICECHO_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
+      AICECHO_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      AICECHO_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
     steps:
       - name: Check out repository
@@ -32,13 +32,13 @@ jobs:
             exit 1
           }
           test -n "$ANDROID_SIGNING_KEY"
-          test -n "$AIMESIM_RELEASE_STORE_PASSWORD"
-          test -n "$AIMESIM_RELEASE_KEY_ALIAS"
-          test -n "$AIMESIM_RELEASE_KEY_PASSWORD"
-          release_keystore="$RUNNER_TEMP/aimesimulator-release.jks"
+          test -n "$AICECHO_RELEASE_STORE_PASSWORD"
+          test -n "$AICECHO_RELEASE_KEY_ALIAS"
+          test -n "$AICECHO_RELEASE_KEY_PASSWORD"
+          release_keystore="$RUNNER_TEMP/aicecho-release.jks"
           printf '%s' "$ANDROID_SIGNING_KEY" | base64 --decode > "$release_keystore"
           test -s "$release_keystore"
-          echo "AIMESIM_RELEASE_KEYSTORE=$release_keystore" >> "$GITHUB_ENV"
+          echo "AICECHO_RELEASE_KEYSTORE=$release_keystore" >> "$GITHUB_ENV"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -68,22 +68,22 @@ jobs:
       - name: Verify and stage release APK
         run: |
           version_name=${GITHUB_REF_NAME#v}
-          release_apk="dist/AimeSimulator-${version_name}-release.apk"
+          release_apk="dist/AICEcho-${version_name}-release.apk"
           cp app/build/outputs/apk/release/app-release.apk "$release_apk"
           "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --verbose --print-certs "$release_apk"
           cd dist
           sha256sum "$(basename "$release_apk")" > "$(basename "$release_apk").sha256"
-          sha256sum aimesim-pmm-ksu-v3.zip > aimesim-pmm-ksu-v3.zip.sha256
+          sha256sum aicecho-pmm-ksu-v3.zip > aicecho-pmm-ksu-v3.zip.sha256
 
       - name: Upload signed APK to workflow run
         uses: actions/upload-artifact@v6
         with:
-          name: AimeSimulator-${{ github.ref_name }}-release
+          name: AICEcho-${{ github.ref_name }}-release
           path: |
-            dist/AimeSimulator-*-release.apk
-            dist/AimeSimulator-*-release.apk.sha256
-            dist/aimesim-pmm-ksu-v3.zip
-            dist/aimesim-pmm-ksu-v3.zip.sha256
+            dist/AICEcho-*-release.apk
+            dist/AICEcho-*-release.apk.sha256
+            dist/aicecho-pmm-ksu-v3.zip
+            dist/aicecho-pmm-ksu-v3.zip.sha256
           if-no-files-found: error
           retention-days: 90
 
@@ -92,9 +92,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version_name=${GITHUB_REF_NAME#v}
-          release_apk="dist/AimeSimulator-${version_name}-release.apk"
+          release_apk="dist/AICEcho-${version_name}-release.apk"
           checksum="${release_apk}.sha256"
-          module_zip="dist/aimesim-pmm-ksu-v3.zip"
+          module_zip="dist/aicecho-pmm-ksu-v3.zip"
           module_checksum="${module_zip}.sha256"
           notes="docs/releases/${version_name}.md"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
@@ -104,10 +104,10 @@ jobs:
               --verify-tag \
               --notes-file "$notes" \
               --latest \
-              --title "AimeSimulator ${version_name}"
+              --title "AICEcho ${version_name}"
           else
             gh release create "$GITHUB_REF_NAME" "$release_apk" "$checksum" "$module_zip" "$module_checksum" \
               --verify-tag \
               --generate-notes \
-              --title "AimeSimulator ${version_name}"
+              --title "AICEcho ${version_name}"
           fi

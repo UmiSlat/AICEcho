@@ -20,7 +20,7 @@ tool does not send write, firmware, or configuration commands to the reader.
 
 3. Open <http://127.0.0.1:8765/> in desktop Chrome.
 4. Select the HINATA USB device and run the full diagnostic while the phone is
-   unlocked and the AimeSimulator HCE-F service is active.
+   unlocked and the AICEcho HCE-F service is active.
 5. Export the JSON report after the run.
 
 WebHID requires a secure context. `localhost` and `127.0.0.1` are treated as

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="TextAppearance.AimeSimulator.Toolbar" parent="TextAppearance.Material3.TitleLarge">
+    <style name="TextAppearance.AICEcho.Toolbar" parent="TextAppearance.Material3.TitleLarge">
         <item name="android:textSize">22sp</item>
     </style>
 
-    <style name="Theme.AimeSimulator" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.AICEcho" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:windowLightStatusBar">?attr/isLightTheme</item>
         <item name="android:navigationBarColor">?attr/colorSurface</item>
         <item name="android:statusBarColor">?attr/colorSurface</item>

@@ -1,10 +1,14 @@
-# AimeSimulator
+# AICEcho
 
-AimeSimulator 是一款 Android Aime 卡片管理与模拟应用。读取并保存实体卡资料后，可以在支持的手机上模拟刷卡。
+AICEcho 是一款面向 Amusement IC / Aime 卡片的 Android 管理与 NFC-F 模拟应用。读取并保存实体卡资料后，可以在支持的手机上模拟刷卡。
 
 支持多张卡片管理、实体卡读取和本地备份。日常使用从选卡开始，高级参数和诊断工具可按需开启。
 
-3.0.1 是本项目首个正式版本。本页介绍它的安装与使用方式，下载入口见下文。
+名称中的 `AIC` 取自 Amusement IC，`Echo` 表示回应：保留原卡标识，卡片资料由用户本地保存和使用。
+
+本页介绍当前版本的安装与使用方式，下载入口见下文。
+
+AICEcho 使用独立包名 `io.github.umislat.aicecho`，按全新应用安装。卡片资料由本应用读取或手动添加，备份仅使用 AICEcho 格式。
 
 ## 我的手机能用吗？
 
@@ -25,14 +29,11 @@ AimeSimulator 是一款 Android Aime 卡片管理与模拟应用。读取并保�
 
 ## 下载与安装
 
-| 版本 | 下载位置 | 说明 |
-| --- | --- | --- |
-| 正式版 3.0.1 | [下载页面](https://github.com/UmiSlat/AimeSimulator/releases/tag/v3.0.1) | 在资源列表中下载 `AimeSimulator-3.0.1-release.apk`；可选兼容补丁与校验文件也在同一页面 |
-| 3.0 主线测试版 | [Android CI](https://github.com/UmiSlat/AimeSimulator/actions/workflows/android-ci.yml) | 选择成功的 `main` 构建，在 Artifacts 下载 `AimeSimulator-release-…`，解压后安装 APK；下载需登录 GitHub |
+从 [Android CI](https://github.com/UmiSlat/AICEcho/actions/workflows/android-ci.yml) 选择成功的 `main` 构建，在 Artifacts 下载 `AICEcho-release-…`，解压后安装 APK；下载需登录 GitHub。产物同时包含可选的 `aicecho-pmm-ksu-v3.zip` 和校验文件。
 
-主线测试版使用与正式版相同的证书签名，版本名带有 `-ci` 和提交标识，可在“设置 → 关于”查看。它包含开发中的更新；日常安装优先选择正式版。`v3.0.0` 保留为此前的预发布，不覆盖旧标签或旧安装包。
+主线构建使用发布证书签名，版本名带有 `-ci` 和提交标识，可在“设置 → 关于”查看。新包按独立应用安装；已有 AICEcho 安装可使用相同签名、版本码不低于当前版本的构建更新。
 
-更新前建议导出卡片备份。同签名且版本码不低于已安装版本的 APK 可覆盖更新；本地 debug 包可能使用不同签名，请保留数据，不要直接卸载重装。
+更新 AICEcho 前建议导出本应用的卡片备份。本地 debug 包可能使用不同签名，请保留数据，不要直接卸载重装。
 
 ## 第一次使用
 
@@ -57,7 +58,7 @@ AimeSimulator 是一款 Android Aime 卡片管理与模拟应用。读取并保�
 ### 3. 配置手机刷卡
 
 1. 从[官网下载 Shizuku](https://shizuku.rikka.app/zh-hans/download/)，按[官方启动教程](https://shizuku.rikka.app/zh-hans/guide/setup/)选择“通过无线调试启动”。这里不要选择“通过 Root 启动”；也可以按教程通过电脑调试启动。
-2. 在 AimeSimulator 的“状态 → 模拟方式”中选择“Shizuku”。
+2. 在 AICEcho 的“状态 → 模拟方式”中选择“Shizuku”。
 3. 回到“卡片”页，点“配置并使用”。首次使用时点“授权 Shizuku”；已有授权会自动连接并检查，不必每次重进应用都手动连接。
 4. 配置页会依次显示“检查设备 → 应用配置 → 加载核对 → 完成”。检查与初始登记由应用处理；出现“应用配置”时，确认后在系统恢复页点“恢复我的数据”，密码留空。
 5. 点“加载配置”，确认短暂重启 NFC，等待核对完成。这一步通常不需要重启手机，期间 NFC 和钱包会短暂不可用。
@@ -113,7 +114,7 @@ AimeSimulator 是一款 Android Aime 卡片管理与模拟应用。读取并保�
 
 ## 兼容性说明
 
-目前已在 Xiaomi 15 Pro / Android 16 / HyperOS 上验证卡片配置、切换、恢复及 HINATA 读卡，读到的卡片资料与原配置一致。该设备安装了 Root/LSPosed，尚未在完全未 Root 的手机上复验；3.0 的游戏账号识别、重启后使用、其他机型和部分系统存储方式仍需验证。
+核心功能此前在 Xiaomi 15 Pro / Android 16 / HyperOS 上完成过卡片配置、切换、恢复与 HINATA 读卡验证。AICEcho 采用新的包名、服务组件和模块标识，这些新身份尚未安装真机复验。此前测试设备安装了 Root/LSPosed，完全未 Root 的设备、游戏账号识别、重启后使用、其他机型和部分系统存储方式仍需验证。
 
 设备检查显示支持、配置成功或读卡器读到数据，分别代表不同步骤通过，并不保证所有游戏或机台都能使用。详细结果见 [3.0 验收记录](docs/3.0_ACCEPTANCE.md)。
 

@@ -25,8 +25,8 @@ MAX_XML = 128 * 1024
 MAX_ARCHIVE = 256 * 1024
 MAX_RECORDS = 128
 TARGETS = frozenset({
-    "io.github.umislat.aimesimulator/io.github.umislat.aimesimulator.nfc.AimeHostService",
-    "io.github.umislat.hceflab/io.github.umislat.hceflab.LabService",
+    "io.github.umislat.aicecho/io.github.umislat.aicecho.nfc.AicHostService",
+    "io.github.umislat.aicecho.hceflab/io.github.umislat.aicecho.hceflab.LabService",
 })
 
 
@@ -157,7 +157,7 @@ def make_plan(*, baseline: bytes, baseline_sha256: str, domain: str,
         raise ValueError("Baseline hash mismatch")
     key = component_key(component)
     if key not in TARGETS or type(uid) is not int or not 10000 <= uid < 100000:
-        raise ValueError("Only existing AimeSimulator/Lab services for primary-user app UIDs")
+        raise ValueError("Only existing AICEcho/Lab services for primary-user app UIDs")
     expected_sc, target_sc = hex_value(expected_sc, 4), hex_value(target_sc, 4)
     expected_idm, target_idm = hex_value(expected_idm, 16), hex_value(target_idm, 16)
     root, records = parse_xml(baseline)
@@ -181,7 +181,7 @@ def make_plan(*, baseline: bytes, baseline_sha256: str, domain: str,
     if inspect_archive(forward) != (domain, proposed) or inspect_archive(rollback) != (domain, baseline):
         raise ValueError("Archive round-trip mismatch")
     report = {
-        "format": "aimesim-offline-provision-plan/v1",
+        "format": "aicecho-offline-provision-plan/v1",
         "state": "offline-unverified-do-not-auto-restore",
         "target_package": PACKAGE,
         "domain": domain,

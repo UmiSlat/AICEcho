@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Aime 模拟器</string>
-    <string name="app_subtitle">FeliCa 卡片管理与模拟</string>
+    <string name="app_name">AICEcho</string>
+    <string name="app_subtitle">AIC 卡片管理与模拟</string>
     <string name="nav_cards">卡片</string>
     <string name="nav_status">状态</string>
     <string name="settings">设置</string>
     <string name="about">关于</string>
     <string name="about_version">版本 %1$s（%2$d）</string>
-    <string name="about_tagline">本地管理卡片，在支持的设备上使用 NFC 模拟。</string>
+    <string name="about_tagline">保留原卡标识，资料由你掌握。</string>
     <string name="about_overview_title">应用简介</string>
     <string name="about_overview_body">保存和管理 NFC-F / FeliCa Lite 卡片，读取实体卡数据，并通过 Android HCE-F 模拟选中的卡片。可用功能取决于设备的 NFC 硬件与系统支持。</string>
     <string name="about_capabilities_title">主要功能</string>
@@ -15,15 +15,15 @@
     <string name="about_privacy_title">本地与隐私</string>
     <string name="about_privacy_body">卡片配置保存在应用私有目录；应用关闭 Android 备份，不申请网络权限，也不包含遥测、账户或在线同步。隐藏 IDm 或卡面 Access Code 只影响界面显示，不会删除配置数据。</string>
     <string name="about_safety_title">使用与风险</string>
-    <string name="about_safety_body">请仅使用你拥有或获准使用的卡片和设备。将 AimeSimulator 设为默认 NFC 应用可能影响原钱包的碰一碰支付。Root、LSPosed 与 KernelSU 补丁会修改系统 NFC 行为；使用前请确认如何停用补丁并恢复正常 NFC 功能。</string>
+    <string name="about_safety_body">请仅使用你拥有或获准使用的卡片和设备。将 AICEcho 设为默认 NFC 应用可能影响原钱包的碰一碰支付。Root、LSPosed 与 KernelSU 补丁会修改系统 NFC 行为；使用前请确认如何停用补丁并恢复正常 NFC 功能。</string>
     <string name="about_scope_title">关于项目</string>
-    <string name="about_scope_body">AimeSimulator 是用于个人设备卡片管理与模拟的非官方工具，兼容性因设备和读卡器而异。Aime、FeliCa 及相关名称和标识属于各自权利人，本项目与相关厂商或运营方无隶属或背书关系。</string>
+    <string name="about_scope_body">AICEcho 是用于个人设备卡片管理与模拟的非官方工具，兼容性因设备和读卡器而异。Aime、FeliCa 及相关名称和标识属于各自权利人，本项目与相关厂商或运营方无隶属或背书关系。</string>
     <string name="open_repository">打开 GitHub 仓库</string>
     <string name="open_repository_failed">无法打开仓库链接。</string>
     <string name="default_nfc_app">默认 NFC 应用</string>
-    <string name="default_nfc_app_active">AimeSimulator 已是默认非接触式支付应用；恢复原钱包前，原钱包的碰一碰支付可能不可用。</string>
-    <string name="default_nfc_app_inactive">AimeSimulator 不是默认非接触式支付应用；切换后可能替换 Android 当前选中的钱包应用。</string>
-    <string name="default_nfc_app_requested">已打开系统默认钱包设置，请在其中选择 AimeSimulator 后返回。</string>
+    <string name="default_nfc_app_active">AICEcho 已是默认非接触式支付应用；恢复原钱包前，原钱包的碰一碰支付可能不可用。</string>
+    <string name="default_nfc_app_inactive">AICEcho 不是默认非接触式支付应用；切换后可能替换 Android 当前选中的钱包应用。</string>
+    <string name="default_nfc_app_requested">已打开系统默认钱包设置，请在其中选择 AICEcho 后返回。</string>
     <string name="default_nfc_app_not_ready">请开启 NFC 后再检查默认非接触式应用。</string>
     <string name="default_nfc_app_unsupported">此设备不支持 Android 主机卡模拟。</string>
     <string name="default_nfc_app_failed">Android 无法返回当前默认非接触式应用。</string>
@@ -31,8 +31,8 @@
     <string name="restore_wallet_app">恢复手机钱包</string>
     <string name="restore_wallet_settings_failed">无法打开钱包设置，请在系统设置的“默认应用”或“非接触式付款”中恢复原钱包。</string>
     <string name="default_nfc_guidance_title">默认 NFC 应用与手机钱包</string>
-    <string name="default_nfc_guidance_inactive">部分 Android 系统要求先将 AimeSimulator 设为默认非接触式应用，才能进行卡片模拟。这会暂时替换当前手机钱包，可能影响碰一碰支付。点击“现在选择”后，在系统设置中选择 AimeSimulator。使用结束后，可在“状态”页点击“恢复手机钱包”，重新选择原钱包。</string>
-    <string name="default_nfc_guidance_active">AimeSimulator 当前是默认非接触式应用，原钱包的碰一碰支付可能暂时不可用。使用结束后，可在“状态”页点击“恢复手机钱包”，再到系统设置中重新选择原钱包。</string>
+    <string name="default_nfc_guidance_inactive">部分 Android 系统要求先将 AICEcho 设为默认非接触式应用，才能进行卡片模拟。这会暂时替换当前手机钱包，可能影响碰一碰支付。点击“现在选择”后，在系统设置中选择 AICEcho。使用结束后，可在“状态”页点击“恢复手机钱包”，重新选择原钱包。</string>
+    <string name="default_nfc_guidance_active">AICEcho 当前是默认非接触式应用，原钱包的碰一碰支付可能暂时不可用。使用结束后，可在“状态”页点击“恢复手机钱包”，再到系统设置中重新选择原钱包。</string>
     <string name="choose_default_nfc_now">现在选择</string>
     <string name="not_now">暂不更改</string>
     <string name="card_profiles">我的卡片</string>
@@ -141,7 +141,7 @@
     <string name="continue_action">继续</string>
     <string name="export_backup_complete">卡片备份已导出。</string>
     <string name="export_backup_failed">无法写入备份文件。</string>
-    <string name="import_backup_invalid">这不是有效的 AimeSimulator 卡片备份。</string>
+    <string name="import_backup_invalid">这不是有效的 AICEcho 卡片备份。</string>
     <string name="import_backup_too_large">备份文件大小或卡片数量超过支持范围。</string>
     <string name="import_backup_unsupported_version">该备份来自尚不支持的新格式。</string>
     <string name="import_backup_integrity_failed">备份完整性校验失败，未导入任何数据。</string>
@@ -163,7 +163,7 @@
     <string name="show_idm">显示卡片 IDm</string>
     <string name="show_access_code">显示卡面 Access Code</string>
     <string name="application_section">应用</string>
-    <string name="open_about">关于 AimeSimulator</string>
+    <string name="open_about">关于 AICEcho</string>
     <string name="enable_pmm_patch">启用 PMm 补丁</string>
     <string name="checking_status">正在检查 Root 集成…</string>
     <string name="pmm_explanation">应用已通过 Android HCE-F 声明兼容的 PMm，仅在设备忽略或替换该值时才需要启用此补丁。Android 15 及以上版本使用随附的 KernelSU 模块，较早版本使用 Xposed 框架 Hook。</string>
@@ -172,8 +172,8 @@
     <string name="pmm_status">%1$s：%2$s</string>
     <string name="state_active">已启用</string>
     <string name="state_inactive">未启用</string>
-    <string name="hcef_service_description">Aime FeliCa 卡片模拟</string>
-    <string name="default_nfc_service_description">AimeSimulator 默认 NFC 应用辅助服务</string>
+    <string name="hcef_service_description">AICEcho NFC-F 卡片模拟</string>
+    <string name="default_nfc_service_description">AICEcho 默认 NFC 应用辅助服务</string>
     <string name="xposed_description">允许动态 NFC-F 标识符，并可应用 PMm 兼容值。</string>
     <string name="advanced_mode">高级模式</string>
     <string name="current_card_summary">当前卡片：%1$s</string>
@@ -197,7 +197,7 @@
     <string name="shizuku_missing">Shizuku 未运行。</string>
     <string name="shizuku_available">Shizuku 已运行，尚未获得授权。</string>
     <string name="shizuku_permission">请在 Shizuku 授权窗口中允许本应用继续。</string>
-    <string name="shizuku_denied">尚未获得权限。请在 Shizuku 中允许 AimeSimulator，再重新连接。</string>
+    <string name="shizuku_denied">尚未获得权限。请在 Shizuku 中允许 AICEcho，再重新连接。</string>
     <string name="shizuku_old_version">请更新 Shizuku，需要支持 API 13 或更高版本。</string>
     <string name="shizuku_root">此配置方式需要通过无线调试或 ADB 启动 Shizuku。请以其中一种方式重新启动 Shizuku；这里不支持通过 Root 启动的 Shizuku。</string>
     <string name="shizuku_connecting">正在连接 Shizuku…</string>

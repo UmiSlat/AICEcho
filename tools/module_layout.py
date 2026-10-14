@@ -9,8 +9,8 @@ REQUIRED_SOURCE_FILES = (
 )
 
 REQUIRED_ARCH_FILES = (
-    "bin/aimesim_injector",
-    "system/vendor/lib64/libaimesim_pmm.so",
+    "bin/aicecho_injector",
+    "system/vendor/lib64/libaicecho_pmm.so",
 )
 
 
