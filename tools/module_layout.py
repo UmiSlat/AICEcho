@@ -6,6 +6,8 @@ REQUIRED_SOURCE_FILES = (
     "module.prop",
     "customize.sh",
     "service.sh",
+    "metamount.sh",
+    "uninstall.sh",
 )
 
 REQUIRED_ARCH_FILES = (
