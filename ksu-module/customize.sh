@@ -13,7 +13,7 @@ elif [ "${APATCH:-}" = true ]; then
   ui_print "- Installing AICEcho PMm metamodule for APatch"
 elif [ -n "${MAGISK_VER_CODE:-}" ]; then
   sed -i '/^metamodule=/d' "$MODPATH/module.prop"
-  rm -f "$MODPATH/metamount.sh" "$MODPATH/emulated-soft-reboot.sh"
+  rm -f "$MODPATH/metamount.sh"
   ui_print "- Installing AICEcho PMm module for Magisk"
 else
   abort "! KernelSU, APatch or Magisk is required"
@@ -28,7 +28,6 @@ set_perm_recursive "$MODPATH/system/vendor" 0 0 0755 0644 u:object_r:vendor_file
 set_perm "$MODPATH/bin/aicecho_injector" 0 0 0755 u:object_r:system_file:s0
 set_perm "$MODPATH/service.sh" 0 0 0755 u:object_r:system_file:s0
 [ ! -f "$MODPATH/metamount.sh" ] || set_perm "$MODPATH/metamount.sh" 0 0 0755 u:object_r:system_file:s0
-[ ! -f "$MODPATH/emulated-soft-reboot.sh" ] || set_perm "$MODPATH/emulated-soft-reboot.sh" 0 0 0755 u:object_r:system_file:s0
 set_perm "$MODPATH/uninstall.sh" 0 0 0755 u:object_r:system_file:s0
 
 mkdir -p /data/adb/aicecho_pmm

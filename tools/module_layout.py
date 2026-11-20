@@ -7,7 +7,6 @@ REQUIRED_SOURCE_FILES = (
     "customize.sh",
     "service.sh",
     "metamount.sh",
-    "emulated-soft-reboot.sh",
     "uninstall.sh",
 )
 
